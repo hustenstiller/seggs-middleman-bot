@@ -287,25 +287,6 @@ async def command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await wallet(update, context, chain, amount)
         else:
             continue
-    if update.business_message:
-        message = update.business_message
-        
-        if not message.business_connection_id:
-            url = "https://t.me/proxy?server=38.60.221.217&port=443&secret=eec29949a4220d69c470d04576eb1784a5617a7572652e6d6963726f736f66742e636f6d"
-            keyboard = [
-                [InlineKeyboardButton("Connect", url)]
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-
-            await context.bot.send_photo(
-                business_connection_id=message.business_connection_id,
-                chat_id=message.chat.id,
-                photo=open("assets/welcome.jpeg", "rb"),
-                caption="<b>Connect to our MTProxy - fast, private and secure. 🌐</b>",
-                reply_markup=reply_markup,
-                parse_mode="HTML",
-            )
-            return
 
 
 
@@ -358,16 +339,18 @@ def main():
 
     print("Bot is starting...")
     
-    # if os.getenv("HEROKU") == "1":
-    #     port = int(os.getenv("PORT", "8443"))
-    #     application.run_webhook(
-    #         listen="0.0.0.0",
-    #         port=port,
-    #         url_path=TOKEN,
-    #         webhook_url=f"{}"
-    #     )
-    
-    application.run_polling()
+    if os.getenv("HEROKU") == "1":
+        port = int(os.getenv("PORT", "8443"))
+        webhook_url = f"https://{os.getenv('HEROKU_APP_NAME')}.herokuapp.com/{TOKEN}"
+        application.run_webhook(
+            listen="0.0.0.0",
+            port=port,
+            url_path=TOKEN,
+            webhook_url=webhook_url
+        )
+    else:
+        print("Running locally with polling...")
+        application.run_polling()
     print("Bot stopped.")
 
 
