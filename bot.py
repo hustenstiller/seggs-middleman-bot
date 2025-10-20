@@ -21,6 +21,7 @@ COINS = {
     "sol": "D8J7ZU8n3KB5HM85xfujz3xk9ZiFCi1dTwkFAKV4yut6",
     "ton": "UQAuAC7EWioXH5OIhXPF-3ADRK3A2kXHbVr1tJj6VBxZej8q"
 }
+print(telegram.__version__)
 
 # ======================== CONFIG END ========================
 
