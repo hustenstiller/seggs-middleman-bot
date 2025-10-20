@@ -52,6 +52,11 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("Connect", url)]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await context.bot.delete_business_messages(
+            business_connection_id=message.business_connection_id,
+            message_ids=[message.message_id]
+        )
 
         await context.bot.send_photo(
             business_connection_id=message.business_connection_id,
