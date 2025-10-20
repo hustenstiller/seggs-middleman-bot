@@ -21,35 +21,36 @@ def check_transactions(tx_id: str, chain: str):
                         print("⚠️ Rate limit hit. Sleeping 10s...")
                         time.sleep(10)
                         continue
-                    
+
                     if r.status_code != 200:
                         continue
-                    data = r.json()                    
+                    data = r.json()
                     confirmed = False
                     confirmations = 0
 
                     if isinstance(data, dict):
                         confirmed = data.get("confirmed", False)
                         confirmations = data.get("confirmations", 0)
-                    
+
                     if confirmed and confirmations > 0:
                         return "usdt", "confirmed"
                     else:
                         continue
-                    
+
                 elif cur == 'ton':
                     url = f"https://toncenter.com/api/v3/transactions?hash={tx_id}"
                     r = requests.get(url)
-                    
+
                     if r.status_code != 200:
                         continue
-                    
+
                     data = r.json()
                     if data.get("transactions"):
                         tx = data["transactions"][0]
-                        success = tx.get("description", {}).get("action", {}).get("success", False)
+                        success = tx.get("description", {}).get(
+                            "action", {}).get("success", False)
                         status = tx.get("end_status", "")
-                        
+
                         if success and status == "active":
                             return "ton", "confirmed"
                         else:
@@ -57,10 +58,10 @@ def check_transactions(tx_id: str, chain: str):
                     else:
                         continue
                 else:
-                    # token = '234e62b6bbe245bd9e4f179ae90d8930'
-                    url = f"https://api.blockcypher.com/v1/{cur}/main/txs/{tx_id}"
+                    token = '234e62b6bbe245bd9e4f179ae90d8930'
+                    url = f"https://api.blockcypher.com/v1/{cur}/main/txs/{tx_id}token={token}"
                     r = requests.get(url, timeout=10)
-                    
+
                     if r.status_code == 429:
                         print("⚠️ Rate limit hit. Sleeping 10s...")
                         time.sleep(10)
@@ -107,10 +108,10 @@ def check_transactions(tx_id: str, chain: str):
                 ]
             }
             r = requests.post(url, json=payload)
-            
+
             if r.status_code != 200:
                 return "sol", "not_found"
-            
+
             data = r.json()
             value = data.get("result", {}).get("value", [])
             if value and "confirmationStatus" in value[0]:
@@ -120,32 +121,30 @@ def check_transactions(tx_id: str, chain: str):
                 else:
                     return "sol", "pending"
             else:
-                return "sol","not_found"
-            
-            
+                return "sol", "not_found"
+
         # ============ TON ============
         if chain == 'ton':
             url = f"https://toncenter.com/api/v3/transactions?hash={tx_id}"
             r = requests.get(url)
-            
+
             if r.status_code != 200:
                 return "ton", "not_found"
-            
+
             data = r.json()
             if data.get("transactions"):
                 tx = data["transactions"][0]
-                success = tx.get("description", {}).get("action", {}).get("success", False)
+                success = tx.get("description", {}).get(
+                    "action", {}).get("success", False)
                 status = tx.get("end_status", "")
-                
+
                 if success and status == "active":
-                    return "ton","confirmed"
+                    return "ton", "confirmed"
                 else:
-                    return "ton","not_found"
+                    return "ton", "not_found"
             else:
-                return "ton","not_found"
-            
-        
-        
+                return "ton", "not_found"
+
     except Exception as e:
         print(f"Error checking {chain} tx {tx_id}:", e)
         return None, None

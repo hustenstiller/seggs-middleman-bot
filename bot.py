@@ -33,10 +33,10 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not message or not message.text:
         return
 
-    if message.chat.id not in admin_id:
-        return
-
     if update.message:
+        if message.chat.id not in admin_id:
+            return
+
         url = "https://t.me/proxy?server=38.60.221.217&port=443&secret=eec29949a4220d69c470d04576eb1784a5617a7572652e6d6963726f736f66742e636f6d"
         keyboard = [
             [InlineKeyboardButton("Connect", url)]
@@ -50,6 +50,9 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode='HTML',
         )
     elif update.business_message:
+        if message.from_user.id not in admin_id:
+            return
+
         url = "https://t.me/proxy?server=38.60.221.217&port=443&secret=eec29949a4220d69c470d04576eb1784a5617a7572652e6d6963726f736f66742e636f6d"
         keyboard = [
             [InlineKeyboardButton("Connect", url)]
@@ -77,9 +80,6 @@ async def invite_command(update: Update, context: CallbackContext):
     message = update.message or update.business_message
     if not message or not message.text:
         return
-
-    print(message)
-    print(f"message: {message}")
 
     if update.message:
         if message.chat.id not in admin_id:
