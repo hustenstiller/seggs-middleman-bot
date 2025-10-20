@@ -201,6 +201,9 @@ async def transactions(update: Update, context: CallbackContext, text: str):
 
 def detect_tx_id(text: str):
     text = text.strip()
+    
+    if re.search(r'https?://|www\.', text, re.IGNORECASE):
+        return None, None
 
     btc_pattern = re.compile(r"\b[a-fA-F0-9]{64}\b")
     eth_pattern = re.compile(r"0x[a-fA-F0-9]{64}")
