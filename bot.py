@@ -13,7 +13,7 @@ import os
 
 TIMEOUT_LIMIT = timedelta(hours=1)
 TOKEN = '8430369918:AAHdYDYzrzZYpudD_9-X40KWjTe9wWijNDc'
-admin_id = [8236705519, 2146933543]
+admin_id = [8236705519]
 
 COINS = {
     "btc": "3ATeuFubPrVzeiYDHdMNcp9S9kRJ3jhGEj",
