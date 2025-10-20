@@ -234,7 +234,7 @@ async def wallet(update: Update, context: CallbackContext, coin: str, amount):
     message_id = update.message.id if update.message else message.message_id
 
     if update.message:
-        if message.chat.id in admin_id:
+        if message.chat.id not in admin_id:
             return
         await update.message.reply_text(
             text=f"<b>Send {coin} to: <code>{address}</code> amount: <code>${amount}</code> </b>",
@@ -245,7 +245,7 @@ async def wallet(update: Update, context: CallbackContext, coin: str, amount):
             message_id=message_id
         )
     elif update.business_message:
-        if message.from_user.id in admin_id:
+        if message.from_user.id not in admin_id:
             return
 
         await context.bot.delete_business_messages(
