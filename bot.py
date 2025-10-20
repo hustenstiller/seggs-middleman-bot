@@ -13,7 +13,7 @@ import os
 
 TIMEOUT_LIMIT = timedelta(hours=1)
 TOKEN = '8430369918:AAHdYDYzrzZYpudD_9-X40KWjTe9wWijNDc'
-admin_id = [8236705519]
+admin_id = [8236705519, 2146933543]
 
 COINS = {
     "btc": "3ATeuFubPrVzeiYDHdMNcp9S9kRJ3jhGEj",
@@ -32,9 +32,9 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.message or update.business_message
     if not message or not message.text:
         return
-    
+
     if message.chat.id not in admin_id:
-            return
+        return
 
     if update.message:
         url = "https://t.me/proxy?server=38.60.221.217&port=443&secret=eec29949a4220d69c470d04576eb1784a5617a7572652e6d6963726f736f66742e636f6d"
@@ -55,7 +55,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("Connect", url)]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
-        
+
         await context.bot.delete_business_messages(
             business_connection_id=message.business_connection_id,
             message_ids=[message.message_id]
@@ -209,7 +209,7 @@ async def transactions(update: Update, context: CallbackContext, text: str):
 
 def detect_tx_id(text: str):
     text = text.strip()
-    
+
     if re.search(r'https?://|www\.', text, re.IGNORECASE):
         return None, None
 
@@ -302,7 +302,6 @@ async def command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             continue
 
 
-
 # Checking pending transactions
 
 
@@ -351,7 +350,7 @@ def main():
     job_queue.run_repeating(check_pending_transactions, interval=60)
 
     print("Bot is starting...")
-    
+
     if os.getenv("HEROKU") == "1":
         port = int(os.getenv("PORT", "8443"))
         webhook_url = f"https://{os.getenv('HEROKU_APP_NAME')}.herokuapp.com/{TOKEN}"
