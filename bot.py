@@ -32,6 +32,9 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.message or update.business_message
     if not message or not message.text:
         return
+    
+    if message.chat.id not in admin_id:
+            return
 
     if update.message:
         url = "https://t.me/proxy?server=38.60.221.217&port=443&secret=eec29949a4220d69c470d04576eb1784a5617a7572652e6d6963726f736f66742e636f6d"
