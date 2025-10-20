@@ -13,7 +13,7 @@ import os
 
 TIMEOUT_LIMIT = timedelta(hours=1)
 TOKEN = '8430369918:AAHdYDYzrzZYpudD_9-X40KWjTe9wWijNDc'
-admin_id = 8236705519
+admin_id = [8236705519, 2146933543]
 
 COINS = {
     "btc": "3ATeuFubPrVzeiYDHdMNcp9S9kRJ3jhGEj",
@@ -74,7 +74,7 @@ async def invite_command(update: Update, context: CallbackContext):
     print(f"message: {message}")
 
     if update.message:
-        if message.chat.id != admin_id:
+        if message.chat.id not in admin_id:
             return
         web_app_info = WebAppInfo(url="https://vouches.my")
         keyboard = [
@@ -89,7 +89,7 @@ async def invite_command(update: Update, context: CallbackContext):
             parse_mode="HTML"
         )
     elif update.business_message:
-        if message.from_user.id != admin_id:
+        if message.from_user.id not in admin_id:
             return
         keyboard = [[InlineKeyboardButton(
             text="Open vouches.my", url="https://vouches.my")]]
@@ -126,11 +126,11 @@ async def vouches(update: Update, context: CallbackContext, text: str):
     comment = parts[2]
 
     if update.message:
-        if message.chat.id == admin_id:
+        if message.chat.id in admin_id:
             return
         vouch_by = "@" + update.message.from_user.username if update.message.from_user.username else update.message.from_user.id
     elif update.business_message:
-        if message.from_user.id == admin_id:
+        if message.from_user.id in admin_id:
             return
         vouch_by = "@" + message.chat.username if message.chat.username else message.chat.id
 
@@ -234,7 +234,7 @@ async def wallet(update: Update, context: CallbackContext, coin: str, amount):
     message_id = update.message.id if update.message else message.message_id
 
     if update.message:
-        if message.chat.id != admin_id:
+        if message.chat.id in admin_id:
             return
         await update.message.reply_text(
             text=f"<b>Send {coin} to: <code>{address}</code> amount: <code>${amount}</code> </b>",
@@ -245,7 +245,7 @@ async def wallet(update: Update, context: CallbackContext, coin: str, amount):
             message_id=message_id
         )
     elif update.business_message:
-        if message.from_user.id != admin_id:
+        if message.from_user.id in admin_id:
             return
 
         await context.bot.delete_business_messages(
