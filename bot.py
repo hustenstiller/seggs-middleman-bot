@@ -1,3 +1,4 @@
+import telegram
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from telegram.ext import CallbackContext, Application, CommandHandler, MessageHandler, filters, ContextTypes
 from database import initialize_db, save_vouch, save_transaction
