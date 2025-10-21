@@ -8,8 +8,7 @@ import sqlite3
 import time
 from datetime import datetime, timedelta, timezone
 import os
-
-# ======================== CONFIG START ========================
+import mysql_handler
 
 TIMEOUT_LIMIT = timedelta(hours=1)
 TOKEN = '8430369918:AAHdYDYzrzZYpudD_9-X40KWjTe9wWijNDc'
@@ -24,10 +23,6 @@ COINS = {
 }
 print(telegram.__version__)
 
-# ======================== CONFIG END ========================
-
-
-# start command
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.message or update.business_message
     if not message or not message.text:
@@ -73,9 +68,6 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="HTML",
         )
 
-# invite message
-
-
 async def invite_command(update: Update, context: CallbackContext):
     message = update.message or update.business_message
     if not message or not message.text:
@@ -118,31 +110,30 @@ async def invite_command(update: Update, context: CallbackContext):
             parse_mode="HTML"
         )
 
-# Vouches
-
-
 async def vouches(update: Update, context: CallbackContext, text: str):
     message = update.message or update.business_message
     if not message or not message.text:
         return
 
-    parts = text.split(" ", 2)
-    if len(parts) < 3:
+    parts = text.split()
+    if len(parts) < 2:
         return
 
-    vouch_for = parts[1]
-    comment = parts[2]
+    if len(parts) > 2 and parts[1].startswith('@'):
+        vouch_for = parts[1]
+        comment = " ".join(parts[2:])
+    else:
+        vouch_for = "@general"
+        comment = " ".join(parts[1:])
 
     if update.message:
-        if message.chat.id in admin_id:
-            return
         vouch_by = "@" + update.message.from_user.username if update.message.from_user.username else update.message.from_user.id
     elif update.business_message:
-        if message.from_user.id in admin_id:
-            return
         vouch_by = "@" + message.chat.username if message.chat.username else message.chat.id
 
     save_vouch(vouch_by, vouch_for, comment)
+    mysql_handler.add_vouch_to_mysql(vouch_by=str(vouch_by), vouch_text=comment)
+    
     if update.message:
         await update.message.reply_text(text="<b>🤝 Vouch added!</b>", parse_mode="HTML")
     elif update.business_message:
@@ -154,9 +145,6 @@ async def vouches(update: Update, context: CallbackContext, text: str):
             parse_mode="HTML"
         )
 
-# Transactions
-
-
 async def transactions(update: Update, context: CallbackContext, text: str):
     message = update.message or update.business_message
     if not message or not message.text:
@@ -164,48 +152,38 @@ async def transactions(update: Update, context: CallbackContext, text: str):
 
     tx_id, chain = detect_tx_id(text)
     if tx_id:
-        chat_id = update.message.chat_id if update.message else message.chat.id
-        message_id = update.message.id if update.message else message.message_id
+        chat_id = message.chat.id
+        message_id = message.id
+        business_connection_id = message.business_connection_id if hasattr(message, 'business_connection_id') else ''
 
         if chain in ['btc', 'eth', 'sol', 'ton']:
             curr, status = check_transactions(tx_id, chain)
             if curr in ['btc', 'eth', 'sol'] and status == 'confirmed':
+                save_transaction(tx_id, curr, chat_id, message_id, business_connection_id, "confirmed")
 
-                if update.message:
-                    save_transaction(tx_id, curr, chat_id, message_id,
-                                     business_connection_id, "confirmed")
-                    await update.message.reply_text(f"<b>✅ The {curr.upper()} transaction is confirmed!</b>", reply_to_message_id=message_id, parse_mode="HTML")
-                elif update.business_message:
-                    business_connection_id = message.business_connection_id
-                    save_transaction(tx_id, curr, chat_id,
-                                     message_id, business_connection_id,  "confirmed")
+                if business_connection_id:
                     await context.bot.send_message(
                         business_connection_id=business_connection_id,
-                        chat_id=message.chat.id,
+                        chat_id=chat_id,
                         text=f"<b>✅ The {curr.upper()} transaction is confirmed!</b>",
-                        reply_to_message_id=message.message_id,
+                        reply_to_message_id=message_id,
                         parse_mode="HTML"
                     )
+                else:
+                    await update.message.reply_text(f"<b>✅ The {curr.upper()} transaction is confirmed!</b>", reply_to_message_id=message_id, parse_mode="HTML")
                 return
 
-        if update.message:
-            save_transaction(tx_id, curr, chat_id, message_id)
-            await update.message.reply_text("<b>⏳ I will let you know when your transaction has hit 1 confirmation!</b>", parse_mode="HTML")
-        elif update.business_message:
-            business_connection_id = message.business_connection_id
-            save_transaction(tx_id, curr, chat_id, message_id,
-                             business_connection_id)
+        save_transaction(tx_id, chain, chat_id, message_id, business_connection_id)
+        if business_connection_id:
             await context.bot.send_message(
                 business_connection_id=business_connection_id,
-                chat_id=message.chat.id,
+                chat_id=chat_id,
                 text="<b>⏳ I will let you know when your transaction has hit 1 confirmation!</b>",
-                reply_to_message_id=message.message_id,
+                reply_to_message_id=message_id,
                 parse_mode="HTML"
             )
-
-
-# Detect transactions
-
+        else:
+            await update.message.reply_text("<b>⏳ I will let you know when your transaction has hit 1 confirmation!</b>", parse_mode="HTML")
 
 def detect_tx_id(text: str):
     text = text.strip()
@@ -229,9 +207,6 @@ def detect_tx_id(text: str):
     else:
         return None, None
 
-
-# show wallets
-
 async def wallet(update: Update, context: CallbackContext, coin: str, amount):
     message = update.message or update.business_message
     if not message or not message.text:
@@ -241,14 +216,14 @@ async def wallet(update: Update, context: CallbackContext, coin: str, amount):
     if not address:
         return
 
-    chat_id = update.message.chat_id if update.message else message.chat.id
-    message_id = update.message.id if update.message else message.message_id
+    chat_id = message.chat.id
+    message_id = message.id
 
     if update.message:
         if message.chat.id not in admin_id:
             return
         await update.message.reply_text(
-            text=f"<b>Send {coin} to: <code>{address}</code> amount: <code>${amount}</code> </b>",
+            text=f"<b>Send {coin.upper()} to:</b> <code>{address}</code>\n<b>Amount:</b> <code>${amount}</code>",
             parse_mode="HTML"
         )
         await context.bot.delete_message(
@@ -265,45 +240,40 @@ async def wallet(update: Update, context: CallbackContext, coin: str, amount):
         )
         await context.bot.send_message(
             business_connection_id=message.business_connection_id,
-            chat_id=message.chat.id,
-            text=f"<b>Send {coin} to: <code>{address}</code> amount: <code>${amount}</code> </b>",
+            chat_id=chat_id,
+            text=f"<b>Send {coin.upper()} to:</b> <code>{address}</code>\n<b>Amount:</b> <code>${amount}</code>",
             parse_mode="HTML"
         )
 
+async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    message = update.message or update.business_message
+    if not message or not message.text:
+        return
+    text = message.text.strip()
 
-#  Handle commands
-
+    if text.lower().startswith("vouch"):
+        await vouches(update, context, text)
+    else:
+        await transactions(update, context, text)
 
 async def command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.message or update.business_message
     if not message or not message.text:
         return
-    text = message.text.strip().lower()
+    text = message.text.strip()
+    
+    command_parts = text.split()
+    command = command_parts[0].lower()
 
-    if text == "/start" or text == '/proxy':
+    if command == "/start" or command == '/proxy':
         await start_command(update, context)
-    elif text == "/invite":
+    elif command == "/invite":
         await invite_command(update, context)
-
-    # Vouch message
-    elif text.lower().startswith("vouch"):
-        await vouches(update, context, text)
-
     else:
-        await transactions(update, context, text)
-
-    for coin in COINS.keys():
-        chain = text.split()[0][1:]
-        if (coin == chain):
-            parts = text.split(" ", 2)
-            amount = parts[1]
-            await wallet(update, context, chain, amount)
-        else:
-            continue
-
-
-# Checking pending transactions
-
+        coin = command[1:]
+        if coin in COINS.keys() and len(command_parts) > 1:
+            amount = command_parts[1]
+            await wallet(update, context, coin, amount)
 
 async def check_pending_transactions(context: ContextTypes.DEFAULT_TYPE):
     with sqlite3.connect("vouches.db") as conn:
@@ -331,7 +301,7 @@ async def check_pending_transactions(context: ContextTypes.DEFAULT_TYPE):
                     cur.execute(
                         "UPDATE transactions SET chain = ?, status = 'confirmed' WHERE id = ?", (curr, id, ))
 
-                    if business_connection_id != '':
+                    if business_connection_id and business_connection_id != '':
                         await context.bot.send_message(business_connection_id=business_connection_id,
                                                        chat_id=chat_id, text=f"<b>✅ The {curr.upper()} transaction is confirmed!</b>",
                                                        reply_to_message_id=message_id,
@@ -341,10 +311,51 @@ async def check_pending_transactions(context: ContextTypes.DEFAULT_TYPE):
                         await context.bot.send_message(chat_id=chat_id, text=f"<b>✅ The {curr.upper()} transaction is confirmed!</b>", reply_to_message_id=message_id, parse_mode="HTML")
                 time.sleep(5)
 
+async def delete_vouch_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    message = update.message or update.business_message
+    if not message:
+        return
+
+    user_id = message.from_user.id
+    
+    if user_id not in admin_id:
+        return
+
+    if not message.reply_to_message or not message.reply_to_message.text:
+        await message.reply_text("<b>Usage:</b> Reply to the vouch message you want to delete with the command <code>/del_vouch</code>.", parse_mode="HTML")
+        return
+
+    vouch_to_delete = message.reply_to_message.text
+    
+    parts = vouch_to_delete.split()
+    actual_vouch_text = ""
+
+    if len(parts) > 2 and parts[1].startswith('@'):
+        actual_vouch_text = " ".join(parts[2:])
+    elif len(parts) > 1:
+        actual_vouch_text = " ".join(parts[1:])
+    else:
+        await message.reply_text("⚠️ Could not understand the format of the vouch to be deleted.")
+        return
+
+    success = mysql_handler.delete_vouch_from_mysql(actual_vouch_text)
+
+    if success:
+        await message.reply_text("✅ Vouch has been deleted from the website database.")
+    else:
+        await message.reply_text("⚠️ Vouch could not be found in the website database. It may have already been deleted.")
+
+    try:
+        await context.bot.delete_message(chat_id=message.chat_id, message_id=message.message_id)
+    except Exception as e:
+        print(f"Could not delete admin command message: {e}")
 
 def main():
     application = Application.builder().token(TOKEN).build()
-    application.add_handler(MessageHandler(filters.ALL, command_handler))
+    
+    application.add_handler(CommandHandler("del_vouch", delete_vouch_command))
+    application.add_handler(MessageHandler(filters.COMMAND, command_handler))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, message_handler))
 
     job_queue = application.job_queue
     job_queue.run_repeating(check_pending_transactions, interval=60)
@@ -364,7 +375,6 @@ def main():
         print("Running locally with polling...")
         application.run_polling()
     print("Bot stopped.")
-
 
 if __name__ == '__main__':
     initialize_db()
