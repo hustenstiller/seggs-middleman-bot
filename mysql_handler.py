@@ -48,12 +48,12 @@ def delete_vouch_from_mysql(vouch_text):
         return False
 
     cursor = conn.cursor()
-    query = "DELETE FROM vouches WHERE vouch_text = %s LIMIT 1"
+    query = "UPDATE vouches SET status = 'deleted' WHERE vouch_text = %s LIMIT 1"
     try:
         cursor.execute(query, (vouch_text,))
         if cursor.rowcount > 0:
             conn.commit()
-            print(f"Successfully deleted vouch from MySQL with text: {vouch_text[:30]}...")
+            print(f"Successfully marked vouch as deleted in MySQL with text: {vouch_text[:30]}...")
             return True
         else:
             print(f"No vouch found in MySQL to delete with text: {vouch_text[:30]}...")
@@ -64,3 +64,21 @@ def delete_vouch_from_mysql(vouch_text):
     finally:
         cursor.close()
         conn.close()
+
+def get_vouch_text_from_message(message_text: str) -> str | None:
+    """
+    Parses the full text of a vouch message and returns only the comment part.
+    This is needed for the /del_vouch command to find the correct database entry.
+    """
+    if not message_text:
+        return None
+
+    parts = message_text.strip().split()
+    if len(parts) > 2 and parts[1].startswith('@'):
+        return " ".join(parts[2:])
+
+    elif len(parts) > 1 and parts[0].lower() == 'vouch':
+        return " ".join(parts[1:])
+
+    else:
+        return None

@@ -48,20 +48,20 @@ def save_transaction(tx_id, chain, chat_id, message_id, business_connection_id =
     conn.close()
 
 def delete_vouch_from_local_db(message_text):
-    """Deletes a vouch from the local SQLite database based on its text."""
-    conn = sqlite3.connect("vouches.db")
-    cur = conn.cursor()
     try:
-        cur.execute("DELETE FROM vouches WHERE message = ? LIMIT 1", (message_text,))
-        if cur.rowcount > 0:
-            conn.commit()
-            print(f"Successfully deleted vouch from local SQLite DB.")
-            return True
-        else:
-            print(f"No vouch found in local SQLite DB to delete.")
-            return False
+        with sqlite3.connect("vouches.db") as conn:
+            cursor = conn.cursor()
+            query = "DELETE FROM vouches WHERE rowid = (SELECT rowid FROM vouches WHERE message = ? LIMIT 1)"
+            
+            cursor.execute(query, (message_text,))
+            
+            if cursor.rowcount > 0:
+                conn.commit()
+                print("Successfully deleted vouch from local SQLite DB.")
+                return True
+            else:
+                print("No vouch found in local SQLite DB to delete.")
+                return False
     except sqlite3.Error as e:
         print(f"SQLite Error on delete: {e}")
         return False
-    finally:
-        conn.close()
