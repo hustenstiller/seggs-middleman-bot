@@ -10,10 +10,11 @@ from datetime import datetime, timedelta, timezone
 import os
 import mysql_handler
 
+# ======================== CONFIG START ========================
 
 TIMEOUT_LIMIT = timedelta(hours=1)
-TOKEN = '8430369918:AAHdYDYzrzZYpudD_9-X40KWjTe9wWijNDc'
-admin_id = [8236705519]
+TOKEN = '7629628189:AAGQk9TB-wKMQaxG_2q9DCprVe9tKOGk1xk'
+admin_id = [8236705519, 2088401406]
 
 COINS = {
     "btc": "3ATeuFubPrVzeiYDHdMNcp9S9kRJ3jhGEj",
@@ -24,6 +25,10 @@ COINS = {
 }
 print(f"python-telegram-bot version: {telegram.__version__}")
 
+# ======================== CONFIG END ========================
+
+
+# ========= ACTION FUNCTIONS (Unchanged) =========
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -186,6 +191,8 @@ async def delete_vouch_command(update: Update, context: ContextTypes.DEFAULT_TYP
         print(f"A critical error occurred in delete_vouch_command: {e}")
 
 
+# ========= SINGLE MASTER HANDLER (With FINAL Permission Rules) =========
+
 async def master_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handles ALL incoming messages and routes them based on the new permission rules."""
     try:
@@ -198,11 +205,14 @@ async def master_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         command_parts = text.split()
         command = command_parts[0].lower()
 
+        # Rule: Admins can do everything EXCEPT vouch.
         if user_id in admin_id:
             if command.startswith("vouch"):
+                # Admin is NOT allowed to use vouch. Ignore the command.
                 print(f"Info: Admin {user_id} tried to use 'vouch'. Action ignored.")
                 return
 
+            # --- Admin Command Routing ---
             if command in ["/start", "/proxy"]:
                 await start_command(update, context)
                 return
@@ -221,16 +231,23 @@ async def master_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     await message.reply_text(f"<b>Usage:</b> <code>/{coin} [amount]</code>", parse_mode="HTML")
                 return
             
+            # --- Admin Transaction Detection ---
+            # If no other admin command matches, check for a transaction hash.
             await transactions(update, context, text)
             return
+
+        # Rule: Non-Admins can ONLY vouch.
         else:
             if command.startswith("vouch"):
                 await vouches(update, context, text)
                 return
+            # Any other message from a non-admin is ignored.
 
     except Exception as e:
         print(f"FATAL ERROR in master_handler, update was not processed: {e}")
 
+
+# ========= BACKGROUND JOB (Unchanged) =========
 
 async def check_pending_transactions(context: ContextTypes.DEFAULT_TYPE):
     with sqlite3.connect("vouches.db") as conn:
@@ -256,6 +273,8 @@ async def check_pending_transactions(context: ContextTypes.DEFAULT_TYPE):
             time.sleep(5)
         conn.commit()
 
+
+# ========= MAIN SETUP (Using Your Working Method) =========
 
 def main():
     application = Application.builder().token(TOKEN).build()
