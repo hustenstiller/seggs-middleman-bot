@@ -84,7 +84,6 @@ async def invite_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     except Exception as e:
         print(f"Error in invite_command: {e}")
-        print(f"Error in invite_command: {e}")
 
 async def vouches(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
     try:
