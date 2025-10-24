@@ -58,11 +58,11 @@ async def invite_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         response_text = (
             "<b>💬 How to vouch me:</b>\n\n"
-            "Simply send a message starting with the word — vouch —\n"
-            "followed by your text.\n\n"
+            "<b>Simply send a message starting with the word — vouch —<b>\n"
+            "<b>followed by your text.<b>\n\n"
             "<b>Example:</b>\n"
             "<code>vouch great and smooth deal, fast and trusted 🤝</code>\n\n"
-            "Your vouch will be automatically posted on my site — vouches.my ✅"
+            "<b>Your vouch will be automatically posted on my site — vouches.my ✅<b>"
         )
 
         web_app_info = WebAppInfo(url="https://vouches.my")
