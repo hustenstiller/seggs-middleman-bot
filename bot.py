@@ -55,18 +55,25 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def invite_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         message = update.message or update.business_message
-        caption = "<b>Your feedback helps build trust and shows others they can count on me. ⚡️</b>"
-        photo_path = "assets/invite.jpeg"
+        
+        response_text = (
+            "<b>💬 How to vouch me:</b>\n\n"
+            "Simply send a message starting with the word — vouch —\n"
+            "followed by your text.\n\n"
+            "<b>Example:</b>\n"
+            "<code>vouch great and smooth deal, fast and trusted 🤝</code>\n\n"
+            "Your vouch will be automatically posted on my site — vouches.my ✅"
+        )
 
+        web_app_info = WebAppInfo(url="https://vouches.my")
+        keyboard = [[InlineKeyboardButton(text="vouches.my", web_app=web_app_info)]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
         if update.message:
-            web_app_info = WebAppInfo(url="https://vouches.my")
-            keyboard = [[InlineKeyboardButton(text="vouches.my", web_app=web_app_info)]]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            await message.reply_photo(photo=photo_path, caption=caption, reply_markup=reply_markup, parse_mode="HTML")
+            await message.reply_text(text=response_text, reply_markup=reply_markup, parse_mode="HTML", disable_web_page_preview=True)
         elif update.business_message:
-            keyboard = [[InlineKeyboardButton(text="Open vouches.my", url="https://vouches.my")]]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            await context.bot.send_photo(business_connection_id=message.business_connection_id, chat_id=message.chat.id, photo=photo_path, caption=caption, reply_markup=reply_markup, parse_mode="HTML")
+            url_keyboard = [[InlineKeyboardButton(text="vouches.my", url="https://vouches.my")]]
+            url_reply_markup = InlineKeyboardMarkup(url_keyboard)
+            await context.bot.send_message(business_connection_id=message.business_connection_id, chat_id=message.chat.id, text=response_text, reply_markup=url_reply_markup, parse_mode="HTML", disable_web_page_preview=True)
 
         try:
             if update.message:
@@ -76,9 +83,8 @@ async def invite_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except telegram.error.BadRequest as e:
             print(f"Info: Could not delete /invite command: {e}. (Normal for old messages)")
 
-    except FileNotFoundError:
-        print("ERROR: Asset file 'assets/invite.jpeg' not found.")
     except Exception as e:
+        print(f"Error in invite_command: {e}")
         print(f"Error in invite_command: {e}")
 
 async def vouches(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
