@@ -9,7 +9,7 @@ import time
 from datetime import datetime, timedelta, timezone
 import os
 import mysql_handler
-
+from email_handler import send_vouch_notification
 
 TIMEOUT_LIMIT = timedelta(hours=1)
 TOKEN = '8430369918:AAHdYDYzrzZYpudD_9-X40KWjTe9wWijNDc'
@@ -93,9 +93,10 @@ async def vouches(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str)
 
         vouch_for, comment = (parts[1], " ".join(parts[2:])) if len(parts) > 2 and parts[1].startswith('@') else ("@general", " ".join(parts[1:]))
         vouch_by = f"@{message.from_user.username}" if message.from_user.username else f"User:{message.from_user.id}"
-        
         save_vouch(vouch_by, vouch_for, comment)
-        mysql_handler.add_vouch_to_mysql(vouch_by=str(vouch_by), vouch_text=comment)
+
+        if mysql_handler.add_vouch_to_mysql(vouch_by=str(vouch_by), vouch_text=comment):
+            send_vouch_notification(vouch_by, comment)
         
         confirmation_text = "<b>🤝 Vouch added!</b>"
         if update.message:
