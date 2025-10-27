@@ -1,29 +1,21 @@
-# email_handler.py
-
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
-# --- Configuration ---
 SMTP_HOST = "smtp.hostinger.com"
 SMTP_PORT = 465
 SENDER_EMAIL = "info@vouches.my"
-# IMPORTANT: Use your actual App Password here
 SENDER_PASSWORD = "CAWES30/1!a" 
-# IMPORTANT: Your personal email
-RECIPIENT_EMAIL = "anonymous000650321@gmail.com"
+RECIPIENT_EMAIL = "mueller.david@mail.com"
 
 def send_vouch_notification(vouch_by, vouch_text):
     """Sends a standardized email notification when a new vouch is added."""
-    
-    # --- HIGHLIGHT: Standardized Email Format ---
     subject = f"New Vouch Added from Telegram Bot ({vouch_by})"
     body = (
         f"Source: Telegram Bot\n"
         f"User: {vouch_by}\n"
         f"Vouch: {vouch_text}"
     )
-    # --- END HIGHLIGHT ---
 
     message = MIMEMultipart()
     message["From"] = SENDER_EMAIL
