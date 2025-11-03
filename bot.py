@@ -24,7 +24,6 @@ COINS = {
 }
 print(f"python-telegram-bot version: {telegram.__version__}")
 
-
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         message = update.message or update.business_message
