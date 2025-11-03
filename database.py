@@ -26,8 +26,30 @@ def initialize_db():
                 )
                 """)
 
+    conn.execute("""
+                CREATE TABLE IF NOT EXISTS users (
+                    user_id INTEGER PRIMARY KEY,
+                    first_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+                """)
+
     conn.commit()
     conn.close()
+
+
+def is_new_user(user_id: int) -> bool:
+    """Check if a user is new by seeing if they are in the users table."""
+    with sqlite3.connect("vouches.db") as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT 1 FROM users WHERE user_id = ?", (user_id,))
+        return cursor.fetchone() is None
+
+def add_user(user_id: int):
+    """Add a new user to the users table."""
+    with sqlite3.connect("vouches.db") as conn:
+        cursor = conn.cursor()
+        cursor.execute("INSERT OR IGNORE INTO users (user_id) VALUES (?)", (user_id,))
+        conn.commit()
 
 
 def save_vouch(vouch_by, vouch_for, message):

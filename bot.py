@@ -1,7 +1,7 @@
 import telegram
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from telegram.ext import Application, MessageHandler, filters, ContextTypes
-from database import initialize_db, save_vouch, save_transaction, delete_vouch_from_local_db
+from database import initialize_db, save_vouch, save_transaction, delete_vouch_from_local_db, is_new_user, add_user
 from transactions import check_transactions
 import re
 import sqlite3
@@ -190,16 +190,65 @@ async def delete_vouch_command(update: Update, context: ContextTypes.DEFAULT_TYP
     except Exception as e:
         print(f"A critical error occurred in delete_vouch_command: {e}")
 
-
 async def master_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handles ALL incoming messages and routes them based on the new permission rules."""
     try:
         message = update.message or update.business_message
-        if not message or not message.text or not message.from_user:
+        if not message or not message.from_user:
             return
             
-        text = message.text.strip()
         user_id = message.from_user.id
+
+        if is_new_user(user_id):
+            add_user(user_id) 
+            
+            welcome_caption = (
+                "<b>Welcome to my Thread</b>\n\n"
+                "Read this <b>carefully</b> before contacting me.\n\n"
+                " • No “hi,” “hello,” or small talk — get <b>straight</b> to the point about what you want.\n\n"
+                "• Always have your <b>crypto ready</b> before messaging me about any deal. No time-wasting or “I’ll buy later.”\n\n"
+                " • Make sure you <b>read my TOS</b> in full before we proceed. By messaging me, you automatically agree to them.\n\n"
+                "• After a smooth transaction, <b>leave a vouch</b> — it helps build trust in the community."
+            )
+            photo_path = "assets/welocome_thread.jpg"
+            keyboard = [[InlineKeyboardButton("ToS", url="https://tos.vouches.my")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+
+            try:
+                if update.message:
+                    await message.reply_photo(
+                        photo=photo_path, 
+                        caption=welcome_caption, 
+                        reply_markup=reply_markup, 
+                        parse_mode='HTML'
+                    )
+                elif update.business_message:
+                    await context.bot.send_photo(
+                        business_connection_id=message.business_connection_id,
+                        chat_id=message.chat.id,
+                        photo=photo_path,
+                        caption=welcome_caption,
+                        reply_markup=reply_markup,
+                        parse_mode="HTML"
+                    )
+            except FileNotFoundError:
+                print(f"ERROR: Welcome image not found at '{photo_path}'. Sending text-only fallback.")
+                if update.message:
+                    await message.reply_text(text=welcome_caption, reply_markup=reply_markup, parse_mode='HTML', disable_web_page_preview=True)
+                elif update.business_message:
+                    await context.bot.send_message(
+                        business_connection_id=message.business_connection_id,
+                        chat_id=message.chat.id,
+                        text=welcome_caption,
+                        reply_markup=reply_markup,
+                        parse_mode="HTML",
+                        disable_web_page_preview=True
+                    )
+        
+        if not message.text:
+            return
+
+        text = message.text.strip()
         command_parts = text.split()
         command = command_parts[0].lower()
 
@@ -243,7 +292,7 @@ async def check_pending_transactions(context: ContextTypes.DEFAULT_TYPE):
         rows = cur.execute("SELECT id, tx_id, chain, message_id, chat_id, business_connection_id, date FROM transactions WHERE status = 'pending'").fetchall()
         current_time = datetime.now(timezone.utc)
         for id, tx_id, chain, message_id, chat_id, business_connection_id, date in rows:
-            created_at = datetime.strptime(date, '%Y-%m-%d %H:%M:%S').replace(tzinfo=timezone.utc)
+            created_at = datetime.strptime(date, '%Y-%-m-%d %H:%M:%S').replace(tzinfo=timezone.utc)
             if current_time - created_at > TIMEOUT_LIMIT:
                 cur.execute("UPDATE transactions SET status = 'failed' WHERE id = ?", (id,))
                 continue
@@ -264,7 +313,7 @@ async def check_pending_transactions(context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     application = Application.builder().token(TOKEN).build()
-    application.add_handler(MessageHandler(filters.TEXT, master_handler))
+    application.add_handler(MessageHandler(filters.TEXT | filters.ATTACHMENT, master_handler)) # Accept non-text messages
     job_queue = application.job_queue
     job_queue.run_repeating(check_pending_transactions, interval=60, name="pending_tx_checker")
     print("Business Bot is starting...")
