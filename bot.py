@@ -18,7 +18,7 @@ load_dotenv()
 
 TIMEOUT_LIMIT = timedelta(hours=1)
 TOKEN = os.getenv("TOKEN")
-admin_id = [8236705519, 2088401406, 7720291721]
+admin_id = [8236705519]
 
 FK_API_URL = os.getenv("FK_API_URL")
 FK_SHOP_ID = os.getenv("FK_SHOP_ID")
