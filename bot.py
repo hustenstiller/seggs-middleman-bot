@@ -25,8 +25,23 @@ FK_SHOP_ID = os.getenv("FK_SHOP_ID")
 FK_API_KEY = os.getenv("FK_API_KEY")
 
 PAYMENT_SYSTEMS = {
-    "cc": 13, "fk": 2, "ton": 45, "usdtTrc": 15, "usdtErc" : 14, "bnb" : 17, "tron": 39, 
-    "btc": 24, "ltc": 25, "eth": 26,
+    "btc": 24,
+    "ltc": 25,
+    "eth": 26,
+    "usdttrc": 15,
+    "usdterc": 14,
+    "ton": 45,
+    "bnb": 17,
+    "tron": 39,
+    "fkusd": 2,       
+    "fkrub": 1,   
+    "yoomoney": 6,
+    "cardrub": 36,  
+    "visarub": 4,
+    "mastercardrub": 8,
+    "mir": 12,
+    "cc": 13,
+    "sbp": 42, 
 }
 
 COINS = {
@@ -327,10 +342,6 @@ async def master_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 alphabet = string.ascii_letters + string.digits
                 url_key = ''.join(secrets.choice(alphabet) for i in range(12))
 
-                mysql_handler.save_invoice_to_mysql(order_id, amount, url_key, payment_system_id)
-                
-                invoice_url = f"https://vouches.my/payment/{url_key}"
-                
                 invoice_text = (
                     f"✅ <b>Invoice Successfully Created</b>\n\n"
                     f"Your invoice for <b>${amount:.2f}</b> has been generated.\n\n"
@@ -339,18 +350,33 @@ async def master_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     f"Click the button below to\n<b>proceed with the payment</b>."
                 )
                 
-                keyboard = [
-                    [
-                        InlineKeyboardButton("💳 Pay Securely", url=invoice_url)
-                    ]
-                ]
+                invoice_url = f"https://vouches.my/payment/{url_key}"
+                keyboard = [[InlineKeyboardButton("💳 Pay Securely", url=invoice_url)]]
                 reply_markup = InlineKeyboardMarkup(keyboard)
 
-                await message.reply_text(
+                sent_message = await message.reply_text(
                     text=invoice_text,
                     reply_markup=reply_markup,
                     parse_mode="HTML"
                 )
+                
+                mysql_handler.save_invoice_to_mysql(
+                    order_id, 
+                    amount, 
+                    url_key, 
+                    payment_system_id,
+                    chat_id=sent_message.chat.id,  
+                    message_id=sent_message.message_id
+                )
+
+                try:
+                    if update.message:
+                        await context.bot.delete_message(chat_id=message.chat.id, message_id=message.message_id)
+                    elif update.business_message:
+                        await context.bot.delete_business_messages(business_connection_id=message.business_connection_id, chat_id=message.chat.id, message_ids=[message.message_id])
+                except telegram.error.BadRequest as e:
+                    print(f"Info: Could not delete /invoice command: {e}. (This is normal for old messages).")
+
                 return
             
             coin = command[1:] if command.startswith('/') else None
@@ -373,7 +399,11 @@ async def master_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def check_paid_invoices(context: ContextTypes.DEFAULT_TYPE):
-    """Checks MySQL for paid invoices and notifies the admin."""
+    """
+    Checks for paid invoices, EDITS the original customer message to 'Confirmed',
+    and notifies the admin.
+    """
+    # Find invoices that are paid but haven't been processed by the bot yet
     paid_invoices = mysql_handler.get_paid_unnotified_invoices_from_mysql()
     
     if not paid_invoices:
@@ -382,18 +412,39 @@ async def check_paid_invoices(context: ContextTypes.DEFAULT_TYPE):
     for invoice in paid_invoices:
         invoice_id = invoice['invoice_id']
         amount = invoice['amount']
-        
+        customer_chat_id = invoice.get('customer_chat_id')
+        customer_message_id = invoice.get('customer_message_id')
+
+        if customer_chat_id and customer_message_id:
+            try:
+                confirmed_text = (
+                    f"✅ <b>Payment Confirmed!</b>\n\n"
+                    f"Your payment for <b>${amount:.2f}</b> has been successfully received.\n\n"
+                    f"<b>Invoice ID:</b> <code>{invoice_id}</code>\n"
+                    f"<b>Status:</b> Paid\n\n"
+                    f"Thank you for your transaction!"
+                )
+                await context.bot.edit_message_text(
+                    chat_id=customer_chat_id,
+                    message_id=customer_message_id,
+                    text=confirmed_text,
+                    parse_mode="HTML",
+                    reply_markup=None
+                )
+                print(f"Successfully edited message for invoice {invoice_id}.")
+            except Exception as e:
+                print(f"Could not edit message for invoice {invoice_id}: {e}")
+
         notification_text = f"✅ **Payment Received!**\n\nInvoice ID: `{invoice_id}`\nAmount: `${amount:.2f}`"
-        
         try:
             await context.bot.send_message(
                 chat_id=admin_id[0], 
                 text=notification_text, 
                 parse_mode="Markdown"
             )
-            mysql_handler.update_invoice_notified_status_mysql(invoice_id)
         except Exception as e:
-            print(f"Failed to send/process payment notification for invoice {invoice_id}: {e}")
+            print(f"Failed to send admin notification for invoice {invoice_id}: {e}")
+        mysql_handler.update_invoice_notified_status_mysql(invoice_id)
 
 
 async def check_pending_transactions(context: ContextTypes.DEFAULT_TYPE):

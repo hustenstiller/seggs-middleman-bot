@@ -300,17 +300,18 @@ def get_vouch_text_from_message(message_text: str) -> str | None:
     else:
         return None
     
-def save_invoice_to_mysql(invoice_id, amount, url_key, currency_id=None):
-    """Saves the new invoice with its unique URL key to the database."""
+
+def save_invoice_to_mysql(invoice_id, amount, url_key, currency_id=None, chat_id=None, message_id=None):
+    """Saves the new invoice with its unique URL key and message location."""
     conn = get_mysql_connection()
     if not conn:
         return False
     
     cursor = conn.cursor()
-    query = ("INSERT INTO invoices (invoice_id, amount, url_key, currency_id, status, notified) "
-             "VALUES (%s, %s, %s, %s, 'pending', FALSE)")
+    query = ("INSERT INTO invoices (invoice_id, amount, url_key, currency_id, customer_chat_id, customer_message_id, status, notified) "
+             "VALUES (%s, %s, %s, %s, %s, %s, 'pending', FALSE)")
     try:
-        cursor.execute(query, (invoice_id, amount, url_key, currency_id))
+        cursor.execute(query, (invoice_id, amount, url_key, currency_id, chat_id, message_id))
         conn.commit()
         print(f"Successfully added invoice {invoice_id} to MySQL.")
         return True
