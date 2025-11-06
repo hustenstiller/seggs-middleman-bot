@@ -3,3 +3,4 @@ aiohttp
 requests
 python-telegram-bot[job-queue]>=21.7
 mysql-connector-python
+python-dotenv
