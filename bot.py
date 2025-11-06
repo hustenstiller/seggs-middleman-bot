@@ -46,15 +46,15 @@ PAYMENT_SYSTEMS = {
 }
 
 PAYMENT_LIMITS = {
-    'fkrub':         {'min': 10, 'max': 300000, 'currency': 'RUB'},
+    'fkrub':         {'min': 1001, 'max': 300000, 'currency': 'RUB'},
     'fkusd':         {'min': 1, 'max': 5000, 'currency': 'USD'},
-    'cardrub':       {'min': 1, 'max': 100000, 'currency': 'RUB'},
-    'yoomoney':      {'min': 1, 'max': 100000, 'currency': 'RUB'},
+    'cardrub':       {'min': 1001, 'max': 100000, 'currency': 'RUB'},
+    'yoomoney':      {'min': 1001, 'max': 100000, 'currency': 'RUB'},
     'visarub':       {'min': 1001, 'max': 150000, 'currency': 'RUB'},
-    'mastercardrub': {'min': 500, 'max': 150000, 'currency': 'RUB'},
+    'mastercardrub': {'min': 1001, 'max': 150000, 'currency': 'RUB'},
     'mir':           {'min': 1000, 'max': 100000, 'currency': 'RUB'},
-    'cc':            {'min': 1, 'max': 100000, 'currency': 'RUB'},
-    'sbp':           {'min': 1000, 'max': 100000, 'currency': 'RUB'},
+    'cc':            {'min': 1001, 'max': 100000, 'currency': 'RUB'},
+    'sbp':           {'min': 1001, 'max': 100000, 'currency': 'RUB'},
     'btc':           {'min': 0.0001, 'max': 20, 'currency': 'BTC'},
     'ltc':           {'min': 0.01, 'max': 1000, 'currency': 'LTC'},
     'eth':           {'min': 0.0001, 'max': 1000, 'currency': 'ETH'},
