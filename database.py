@@ -32,6 +32,15 @@ def initialize_db():
                     first_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
                 """)
+    conn.execute("""
+                CREATE TABLE IF NOT EXISTS invoices (
+                    invoice_id TEXT PRIMARY KEY,
+                    amount REAL NOT NULL,
+                    currency_id INTEGER,
+                    status TEXT DEFAULT 'pending',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+                """)
 
     conn.commit()
     conn.close()
@@ -87,3 +96,12 @@ def delete_vouch_from_local_db(message_text):
     except sqlite3.Error as e:
         print(f"SQLite Error on delete: {e}")
         return False
+    
+def save_invoice(invoice_id, amount, currency_id=None):
+    with sqlite3.connect("vouches.db") as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO invoices (invoice_id, amount, currency_id) VALUES (?, ?, ?)",
+            (invoice_id, amount, currency_id)
+        )
+        conn.commit()

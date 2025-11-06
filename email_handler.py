@@ -1,12 +1,16 @@
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+import os
+from dotenv import load_dotenv
 
-SMTP_HOST = "smtp.hostinger.com"
-SMTP_PORT = 465
-SENDER_EMAIL = "info@vouches.my"
-SENDER_PASSWORD = "CAWES30/1!a" 
-RECIPIENT_EMAIL = "mueller.david@mail.com"
+load_dotenv()
+
+SMTP_HOST = os.getenv("SMTP_HOST")
+SMTP_PORT = os.getenv("SMTP_PORT")
+SENDER_EMAIL = os.getenv("SENDER_EMAIL")
+SENDER_PASSWORD = os.getenv("SENDER_PASSWORD")
+RECIPIENT_EMAIL = os.getenv("RECIPIENT_EMAIL")
 
 def send_vouch_notification(vouch_by, vouch_text):
     """Sends a standardized email notification when a new vouch is added."""

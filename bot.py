@@ -1,19 +1,33 @@
 import telegram
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from telegram.ext import Application, MessageHandler, filters, ContextTypes
-from database import initialize_db, save_vouch, save_transaction, delete_vouch_from_local_db, is_new_user, add_user
 from transactions import check_transactions
+import mysql_handler
+from email_handler import send_vouch_notification
 import re
-import sqlite3
 import time
 from datetime import datetime, timedelta, timezone
 import os
-import mysql_handler
-from email_handler import send_vouch_notification
+from urllib.parse import urlencode
+from dotenv import load_dotenv
+import asyncio
+import secrets
+import string
+
+load_dotenv()
 
 TIMEOUT_LIMIT = timedelta(hours=1)
-TOKEN = '8430369918:AAHdYDYzrzZYpudD_9-X40KWjTe9wWijNDc'
-admin_id = [8236705519]
+TOKEN = os.getenv("TOKEN")
+admin_id = [8236705519, 2088401406, 7720291721]
+
+FK_API_URL = os.getenv("FK_API_URL")
+FK_SHOP_ID = os.getenv("FK_SHOP_ID")
+FK_API_KEY = os.getenv("FK_API_KEY")
+
+PAYMENT_SYSTEMS = {
+    "cc": 13, "fk": 2, "ton": 45, "usdtTrc": 15, "usdtErc" : 14, "bnb" : 17, "tron": 39, 
+    "btc": 24, "ltc": 25, "eth": 26,
+}
 
 COINS = {
     "btc": "3ATeuFubPrVzeiYDHdMNcp9S9kRJ3jhGEj",
@@ -24,10 +38,30 @@ COINS = {
 }
 print(f"python-telegram-bot version: {telegram.__version__}")
 
+async def process_vouch_in_background(context: ContextTypes.DEFAULT_TYPE):
+    try:
+        job_data = context.job.data
+        vouch_by = job_data['vouch_by']
+        comment = job_data['comment']
+
+        print(f"Background job started for vouch by {vouch_by}")
+        success = await asyncio.to_thread(
+            mysql_handler.add_vouch_to_mysql, vouch_by=vouch_by, vouch_text=comment
+        )
+        if success:
+            await asyncio.to_thread(
+                send_vouch_notification, vouch_by, comment
+            )
+        
+        print(f"Background job finished for vouch by {vouch_by}")
+
+    except Exception as e:
+        print(f"Error in background vouch processing: {e}")
+
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         message = update.message or update.business_message
-        url = "https://t.me/proxy?server=38.60.221.217&port=443&secret=eec29949a4220d69c470d04576eb1784a5617a7572652e6d6963726f736f66742e636f6d"
+        url = "https://t.me/proxy?server=38.60.221.217&port=443&secret=eec29949a4220d69c470d04576eb1784a5617a7572652e6d6963726f66742e636f6d"
         keyboard = [[InlineKeyboardButton("Connect", url)]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         caption = "<b>Connect to our MTProxy - fast, private and secure. 🌐</b>"
@@ -50,6 +84,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         print("ERROR: Asset file 'assets/welcome.jpeg' not found.")
     except Exception as e:
         print(f"Error in start_command: {e}")
+
 
 async def invite_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -84,26 +119,38 @@ async def invite_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         print(f"Error in invite_command: {e}")
 
+
 async def vouches(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
     try:
         message = update.message or update.business_message
         parts = text.split()
         if len(parts) < 2: return
-
+        
         vouch_for, comment = (parts[1], " ".join(parts[2:])) if len(parts) > 2 and parts[1].startswith('@') else ("@general", " ".join(parts[1:]))
         vouch_by = f"@{message.from_user.username}" if message.from_user.username else f"User:{message.from_user.id}"
-        save_vouch(vouch_by, vouch_for, comment)
-
-        if mysql_handler.add_vouch_to_mysql(vouch_by=str(vouch_by), vouch_text=comment):
-            send_vouch_notification(vouch_by, comment)
         
         confirmation_text = "<b>🤝 Vouch added!</b>"
         if update.message:
             await message.reply_text(text=confirmation_text, parse_mode="HTML")
         elif update.business_message:
-            await context.bot.send_message(business_connection_id=message.business_connection_id, chat_id=message.chat.id, text=confirmation_text, reply_to_message_id=message.message_id, parse_mode="HTML")
+            await context.bot.send_message(
+                business_connection_id=message.business_connection_id,
+                chat_id=message.chat.id,
+                text=confirmation_text,
+                reply_to_message_id=message.message_id,
+                parse_mode="HTML"
+            )
+        
+        context.job_queue.run_once(
+            process_vouch_in_background,
+            when=1,
+            data={'vouch_by': vouch_by, 'comment': comment},
+            name=f"vouch-{message.from_user.id}-{int(time.time())}"
+        )
+
     except Exception as e:
         print(f"Error in vouches function: {e}")
+
 
 async def transactions(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
     try:
@@ -116,10 +163,10 @@ async def transactions(update: Update, context: ContextTypes.DEFAULT_TYPE, text:
         curr, status = check_transactions(tx_id, chain)
         if status == 'confirmed':
             reply_text = f"<b>✅ The {curr.upper()} transaction is already confirmed!</b>"
-            save_transaction(tx_id, curr, message.chat.id, message.message_id, business_connection_id, "confirmed")
+            mysql_handler.save_transaction_to_mysql(tx_id, curr, message.chat.id, message.message_id, business_connection_id, "confirmed")
         else:
             reply_text = "<b>⏳ I will let you know when your transaction has hit 1 confirmation!</b>"
-            save_transaction(tx_id, chain, message.chat.id, message.message_id, business_connection_id)
+            mysql_handler.save_transaction_to_mysql(tx_id, chain, message.chat.id, message.message_id, business_connection_id)
 
         if update.message:
             await message.reply_text(reply_text, parse_mode="HTML")
@@ -128,6 +175,7 @@ async def transactions(update: Update, context: ContextTypes.DEFAULT_TYPE, text:
     except Exception as e:
         print(f"Error in transactions function: {e}")
 
+
 def detect_tx_id(text: str):
     text = text.strip()
     if re.search(r'https?://|www\.', text, re.IGNORECASE): return None, None
@@ -135,6 +183,7 @@ def detect_tx_id(text: str):
     for chain, pattern in patterns.items():
         if match := pattern.search(text): return match.group(), chain
     return None, None
+
 
 async def wallet(update: Update, context: ContextTypes.DEFAULT_TYPE, coin: str, amount: str):
     try:
@@ -159,6 +208,7 @@ async def wallet(update: Update, context: ContextTypes.DEFAULT_TYPE, coin: str, 
     except Exception as e:
         print(f"Error in wallet function: {e}")
 
+
 async def delete_vouch_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         message = update.message or update.business_message
@@ -170,14 +220,12 @@ async def delete_vouch_command(update: Update, context: ContextTypes.DEFAULT_TYP
         if not vouch_text_to_delete:
             await message.reply_text("⚠️ Could not parse the vouch text to be deleted.")
             return
-
         mysql_success = mysql_handler.delete_vouch_from_mysql(vouch_text_to_delete)
-        local_db_success = delete_vouch_from_local_db(vouch_text_to_delete)
 
-        if mysql_success or local_db_success:
-            await message.reply_text("✅ Vouch has been deleted from the database(s).")
+        if mysql_success:
+            await message.reply_text("✅ Vouch has been deleted from the database.")
         else:
-            await message.reply_text("⚠️ Vouch could not be found in the databases.")
+            await message.reply_text("⚠️ Vouch could not be found in the database.")
 
         try:
             if update.message:
@@ -188,18 +236,17 @@ async def delete_vouch_command(update: Update, context: ContextTypes.DEFAULT_TYP
             print(f"Info: Could not delete admin's /del_vouch command: {e}. (This is normal for old messages).")
     except Exception as e:
         print(f"A critical error occurred in delete_vouch_command: {e}")
-
+    
 async def master_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handles ALL incoming messages and routes them based on the new permission rules."""
     try:
         message = update.message or update.business_message
         if not message or not message.from_user:
             return
-            
+        
         user_id = message.from_user.id
-
-        if is_new_user(user_id):
-            add_user(user_id) 
+        if mysql_handler.is_new_user(user_id):
+            mysql_handler.add_user(user_id)
             
             welcome_caption = (
                 "<b>Welcome to my Thread</b>\n\n"
@@ -243,7 +290,9 @@ async def master_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         parse_mode="HTML",
                         disable_web_page_preview=True
                     )
-        
+            except Exception as e:
+                print(f"An error occurred while sending the welcome message: {e}")
+
         if not message.text:
             return
 
@@ -265,6 +314,44 @@ async def master_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if command == "/del_vouch":
                 await delete_vouch_command(update, context)
                 return
+
+            if command.startswith("/invoice"):
+                if len(command_parts) < 2 or not command_parts[1].replace('.', '', 1).isdigit():
+                    await message.reply_text("<b>Usage:</b> <code>/invoice[_{method}] [amount]</code>\n\n<b>Example:</b> <code>/invoice_btc 10.50</code>", parse_mode="HTML")
+                    return
+
+                amount = float(command_parts[1])
+                method_key = command.split('_')[1] if '_' in command else None
+                payment_system_id = PAYMENT_SYSTEMS.get(method_key)
+                order_id = f"{int(time.time())}_{secrets.token_hex(4)}"
+                alphabet = string.ascii_letters + string.digits
+                url_key = ''.join(secrets.choice(alphabet) for i in range(12))
+
+                mysql_handler.save_invoice_to_mysql(order_id, amount, url_key, payment_system_id)
+                
+                invoice_url = f"https://vouches.my/payment/{url_key}"
+                
+                invoice_text = (
+                    f"✅ <b>Invoice Successfully Created</b>\n\n"
+                    f"Your invoice for <b>${amount:.2f}</b> has been generated.\n\n"
+                    f"Please <b>review the details</b> and ensure all information is accurate.\n\n"
+                    f"<b>Status:</b> Pending Payment\n\n"
+                    f"Click the button below to\n<b>proceed with the payment</b>."
+                )
+                
+                keyboard = [
+                    [
+                        InlineKeyboardButton("💳 Pay Securely", url=invoice_url)
+                    ]
+                ]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+
+                await message.reply_text(
+                    text=invoice_text,
+                    reply_markup=reply_markup,
+                    parse_mode="HTML"
+                )
+                return
             
             coin = command[1:] if command.startswith('/') else None
             if coin in COINS.keys():
@@ -273,10 +360,10 @@ async def master_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 else:
                     await message.reply_text(f"<b>Usage:</b> <code>/{coin} [amount]</code>", parse_mode="HTML")
                 return
-            
             await transactions(update, context, text)
             return
-        else:
+
+        else: # Regular user
             if command.startswith("vouch"):
                 await vouches(update, context, text)
                 return
@@ -285,41 +372,76 @@ async def master_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         print(f"FATAL ERROR in master_handler, update was not processed: {e}")
 
 
+async def check_paid_invoices(context: ContextTypes.DEFAULT_TYPE):
+    """Checks MySQL for paid invoices and notifies the admin."""
+    paid_invoices = mysql_handler.get_paid_unnotified_invoices_from_mysql()
+    
+    if not paid_invoices:
+        return
+
+    for invoice in paid_invoices:
+        invoice_id = invoice['invoice_id']
+        amount = invoice['amount']
+        
+        notification_text = f"✅ **Payment Received!**\n\nInvoice ID: `{invoice_id}`\nAmount: `${amount:.2f}`"
+        
+        try:
+            await context.bot.send_message(
+                chat_id=admin_id[0], 
+                text=notification_text, 
+                parse_mode="Markdown"
+            )
+            mysql_handler.update_invoice_notified_status_mysql(invoice_id)
+        except Exception as e:
+            print(f"Failed to send/process payment notification for invoice {invoice_id}: {e}")
+
+
 async def check_pending_transactions(context: ContextTypes.DEFAULT_TYPE):
-    with sqlite3.connect("vouches.db") as conn:
-        cur = conn.cursor()
-        rows = cur.execute("SELECT id, tx_id, chain, message_id, chat_id, business_connection_id, date FROM transactions WHERE status = 'pending'").fetchall()
-        current_time = datetime.now(timezone.utc)
-        for id, tx_id, chain, message_id, chat_id, business_connection_id, date in rows:
-            created_at = datetime.strptime(date, '%Y-%-m-%d %H:%M:%S').replace(tzinfo=timezone.utc)
-            if current_time - created_at > TIMEOUT_LIMIT:
-                cur.execute("UPDATE transactions SET status = 'failed' WHERE id = ?", (id,))
-                continue
-            curr, status = check_transactions(tx_id, chain)
-            if status == 'confirmed':
-                cur.execute("UPDATE transactions SET chain = ?, status = 'confirmed' WHERE id = ?", (curr, id))
-                reply_text = f"<b>✅ The {curr.upper()} transaction is confirmed!</b>"
-                try:
-                    if business_connection_id:
-                        await context.bot.send_message(business_connection_id=business_connection_id, chat_id=chat_id, text=reply_text, reply_to_message_id=message_id, parse_mode="HTML")
-                    else:
-                        await context.bot.send_message(chat_id=chat_id, text=reply_text, reply_to_message_id=message_id, parse_mode="HTML")
-                except Exception as e:
-                    print(f"Failed to send confirmation for tx {tx_id}: {e}")
-            time.sleep(5)
-        conn.commit()
+    """Periodically checks the status of pending transactions from the MySQL database."""
+    pending_transactions = mysql_handler.get_pending_transactions_from_mysql()
+    current_time = datetime.now(timezone.utc)
+
+    for tx in pending_transactions:
+        created_at = tx['date'].replace(tzinfo=timezone.utc)
+        
+        if current_time - created_at > TIMEOUT_LIMIT:
+            mysql_handler.update_transaction_status_in_mysql(tx['id'], 'failed')
+            continue
+
+        curr, status = check_transactions(tx['tx_id'], tx['chain'])
+        
+        if status == 'confirmed':
+            mysql_handler.update_transaction_status_in_mysql(tx['id'], 'confirmed', curr)
+            reply_text = f"<b>✅ The {curr.upper()} transaction is confirmed!</b>"
+            try:
+                chat_id = int(tx['chat_id'])
+                message_id = int(tx['message_id'])
+                business_connection_id = tx['business_connection_id']
+                
+                if business_connection_id:
+                    await context.bot.send_message(business_connection_id=business_connection_id, chat_id=chat_id, text=reply_text, reply_to_message_id=message_id, parse_mode="HTML")
+                else:
+                    await context.bot.send_message(chat_id=chat_id, text=reply_text, reply_to_message_id=message_id, parse_mode="HTML")
+            except Exception as e:
+                print(f"Failed to send confirmation for tx {tx['tx_id']}: {e}")
+        
+        time.sleep(5)
 
 
 def main():
     application = Application.builder().token(TOKEN).build()
-    application.add_handler(MessageHandler(filters.TEXT | filters.ATTACHMENT, master_handler)) # Accept non-text messages
+    
+    # --- UPDATED HANDLER TO CATCH ALL RELEVANT MESSAGE TYPES ---
+    # This will now trigger for text, commands, stickers, photos, etc.
+    application.add_handler(MessageHandler(filters.ALL, master_handler))
+    
     job_queue = application.job_queue
     job_queue.run_repeating(check_pending_transactions, interval=60, name="pending_tx_checker")
+    job_queue.run_repeating(check_paid_invoices, interval=30, name="paid_invoice_checker")
     print("Business Bot is starting...")
     application.run_polling(allowed_updates=Update.ALL_TYPES)
     print("Bot has stopped.")
 
 
 if __name__ == '__main__':
-    initialize_db()
     main()
