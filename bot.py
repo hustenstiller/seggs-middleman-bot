@@ -13,6 +13,7 @@ from dotenv import load_dotenv
 import asyncio
 import secrets
 import string
+from currency_converter import get_live_rates
 
 load_dotenv()
 
@@ -42,6 +43,26 @@ PAYMENT_SYSTEMS = {
     "mir": 12,
     "cc": 13,
     "sbp": 42, 
+}
+
+PAYMENT_LIMITS = {
+    'fkrub':         {'min': 10, 'max': 300000, 'currency': 'RUB'},
+    'fkusd':         {'min': 1, 'max': 5000, 'currency': 'USD'},
+    'cardrub':       {'min': 1, 'max': 100000, 'currency': 'RUB'},
+    'yoomoney':      {'min': 1, 'max': 100000, 'currency': 'RUB'},
+    'visarub':       {'min': 1001, 'max': 150000, 'currency': 'RUB'},
+    'mastercardrub': {'min': 500, 'max': 150000, 'currency': 'RUB'},
+    'mir':           {'min': 1000, 'max': 100000, 'currency': 'RUB'},
+    'cc':            {'min': 1, 'max': 100000, 'currency': 'RUB'},
+    'sbp':           {'min': 1000, 'max': 100000, 'currency': 'RUB'},
+    'btc':           {'min': 0.0001, 'max': 20, 'currency': 'BTC'},
+    'ltc':           {'min': 0.01, 'max': 1000, 'currency': 'LTC'},
+    'eth':           {'min': 0.0001, 'max': 1000, 'currency': 'ETH'},
+    'usdterc':       {'min': 10, 'max': 100000, 'currency': 'USDT'},
+    'usdttrc':       {'min': 2.5, 'max': 100000, 'currency': 'USDT'},
+    'ton':           {'min': 0.1, 'max': 100000, 'currency': 'TON'},
+    'bnb':           {'min': 0.01, 'max': 10000, 'currency': 'BNB'},
+    'tron':          {'min': 10, 'max': 100000, 'currency': 'TRX'},
 }
 
 COINS = {
@@ -252,6 +273,23 @@ async def delete_vouch_command(update: Update, context: ContextTypes.DEFAULT_TYP
     except Exception as e:
         print(f"A critical error occurred in delete_vouch_command: {e}")
     
+async def delete_admin_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """A helper function to safely delete the admin's original command message."""
+    try:
+        message = update.message or update.business_message
+        if not message:
+            return
+
+        if update.message:
+            await context.bot.delete_message(chat_id=message.chat.id, message_id=message.message_id)
+        elif update.business_message:
+            await context.bot.delete_business_messages(
+                business_connection_id=message.business_connection_id,
+                message_ids=[message.message_id]
+            )
+    except telegram.error.BadRequest as e:
+        print(f"Info: Could not delete admin's command: {e}. (Normal for old messages).")
+
 async def master_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handles ALL incoming messages and routes them based on the new permission rules."""
     try:
@@ -277,34 +315,15 @@ async def master_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             try:
                 if update.message:
-                    await message.reply_photo(
-                        photo=photo_path, 
-                        caption=welcome_caption, 
-                        reply_markup=reply_markup, 
-                        parse_mode='HTML'
-                    )
+                    await message.reply_photo(photo=photo_path, caption=welcome_caption, reply_markup=reply_markup, parse_mode='HTML')
                 elif update.business_message:
-                    await context.bot.send_photo(
-                        business_connection_id=message.business_connection_id,
-                        chat_id=message.chat.id,
-                        photo=photo_path,
-                        caption=welcome_caption,
-                        reply_markup=reply_markup,
-                        parse_mode="HTML"
-                    )
+                    await context.bot.send_photo(business_connection_id=message.business_connection_id, chat_id=message.chat.id, photo=photo_path, caption=welcome_caption, reply_markup=reply_markup, parse_mode="HTML")
             except FileNotFoundError:
                 print(f"ERROR: Welcome image not found at '{photo_path}'. Sending text-only fallback.")
                 if update.message:
                     await message.reply_text(text=welcome_caption, reply_markup=reply_markup, parse_mode='HTML', disable_web_page_preview=True)
                 elif update.business_message:
-                    await context.bot.send_message(
-                        business_connection_id=message.business_connection_id,
-                        chat_id=message.chat.id,
-                        text=welcome_caption,
-                        reply_markup=reply_markup,
-                        parse_mode="HTML",
-                        disable_web_page_preview=True
-                    )
+                    await context.bot.send_message(business_connection_id=message.business_connection_id, chat_id=message.chat.id, text=welcome_caption, reply_markup=reply_markup, parse_mode="HTML", disable_web_page_preview=True)
             except Exception as e:
                 print(f"An error occurred while sending the welcome message: {e}")
 
@@ -316,10 +335,6 @@ async def master_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         command = command_parts[0].lower()
 
         if user_id in admin_id:
-            if command.startswith("vouch"):
-                print(f"Info: Admin {user_id} tried to use 'vouch'. Action ignored.")
-                return
-
             if command in ["/start", "/proxy"]:
                 await start_command(update, context)
                 return
@@ -329,19 +344,62 @@ async def master_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if command == "/del_vouch":
                 await delete_vouch_command(update, context)
                 return
-
             if command.startswith("/invoice"):
                 if len(command_parts) < 2 or not command_parts[1].replace('.', '', 1).isdigit():
-                    await message.reply_text("<b>Usage:</b> <code>/invoice[_{method}] [amount]</code>\n\n<b>Example:</b> <code>/invoice_btc 10.50</code>", parse_mode="HTML")
+                    await message.reply_text("<b>Usage:</b> <code>/invoice[_{method}] [amount]</code>", parse_mode="HTML")
+                    await delete_admin_message(update, context)
                     return
 
                 amount = float(command_parts[1])
-                method_key = command.split('_')[1] if '_' in command else None
+                method_key = command.split('_')[1].lower() if '_' in command else None
+
+                if method_key and method_key in PAYMENT_LIMITS:
+                    limit_info = PAYMENT_LIMITS[method_key]
+                    limit_currency = limit_info['currency']
+                    min_limit_native = limit_info['min']
+                    max_limit_native = limit_info['max']
+
+                    symbols_to_fetch = ['USD']
+                    if limit_currency not in ['USD', 'RUB']:
+                        symbols_to_fetch.append(limit_currency)
+                    
+                    rates = get_live_rates(symbols_to_fetch, ['USD', 'RUB'])
+
+                    if not rates:
+                        print("WARNING: Could not fetch live rates. Bypassing limit check.")
+                    else:
+                        min_limit_usd = 0
+                        max_limit_usd = 0
+
+                        if limit_currency == 'USD':
+                            min_limit_usd = min_limit_native
+                            max_limit_usd = max_limit_native
+                        elif limit_currency == 'RUB':
+                            usd_to_rub = rates.get('USD', {}).get('RUB')
+                            if usd_to_rub:
+                                min_limit_usd = min_limit_native / usd_to_rub
+                                max_limit_usd = max_limit_native / usd_to_rub
+                        else: 
+                            crypto_price_usd = rates.get(limit_currency, {}).get('USD')
+                            if crypto_price_usd:
+                                min_limit_usd = min_limit_native * crypto_price_usd
+                                max_limit_usd = max_limit_native * crypto_price_usd
+
+                        if max_limit_usd > 0 and not (min_limit_usd <= amount <= max_limit_usd):
+                            warning_text = (
+                                f"⚠️ <b>Limit Exceeded for {method_key.upper()}</b>\n\n"
+                                f"The amount <code>${amount:.2f}</code> is outside the allowed range.\n\n"
+                                f"<b>Min:</b> <code>${min_limit_usd:.2f}</code>\n"
+                                f"<b>Max:</b> <code>${max_limit_usd:.2f}</code>"
+                            )
+                            await message.reply_text(warning_text, parse_mode="HTML")
+                            await delete_admin_message(update, context)
+                            return
+
                 payment_system_id = PAYMENT_SYSTEMS.get(method_key)
                 order_id = f"{int(time.time())}_{secrets.token_hex(4)}"
                 alphabet = string.ascii_letters + string.digits
                 url_key = ''.join(secrets.choice(alphabet) for i in range(12))
-
                 invoice_text = (
                     f"✅ <b>Invoice Successfully Created</b>\n\n"
                     f"Your invoice for <b>${amount:.2f}</b> has been generated.\n\n"
@@ -349,34 +407,18 @@ async def master_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     f"<b>Status:</b> Pending Payment\n\n"
                     f"Click the button below to\n<b>proceed with the payment</b>."
                 )
-                
                 invoice_url = f"https://vouches.my/payment/{url_key}"
                 keyboard = [[InlineKeyboardButton("💳 Pay Securely", url=invoice_url)]]
                 reply_markup = InlineKeyboardMarkup(keyboard)
 
-                sent_message = await message.reply_text(
-                    text=invoice_text,
-                    reply_markup=reply_markup,
-                    parse_mode="HTML"
-                )
+                sent_message = await message.reply_text(text=invoice_text, reply_markup=reply_markup, parse_mode="HTML")
                 
                 mysql_handler.save_invoice_to_mysql(
-                    order_id, 
-                    amount, 
-                    url_key, 
-                    payment_system_id,
-                    chat_id=sent_message.chat.id,  
-                    message_id=sent_message.message_id
+                    order_id, amount, url_key, payment_system_id,
+                    chat_id=sent_message.chat.id, message_id=sent_message.message_id
                 )
-
-                try:
-                    if update.message:
-                        await context.bot.delete_message(chat_id=message.chat.id, message_id=message.message_id)
-                    elif update.business_message:
-                        await context.bot.delete_business_messages(business_connection_id=message.business_connection_id, chat_id=message.chat.id, message_ids=[message.message_id])
-                except telegram.error.BadRequest as e:
-                    print(f"Info: Could not delete /invoice command: {e}. (This is normal for old messages).")
-
+                
+                await delete_admin_message(update, context)
                 return
             
             coin = command[1:] if command.startswith('/') else None
@@ -385,11 +427,13 @@ async def master_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     await wallet(update, context, coin, command_parts[1])
                 else:
                     await message.reply_text(f"<b>Usage:</b> <code>/{coin} [amount]</code>", parse_mode="HTML")
+                    await delete_admin_message(update, context)
                 return
+
             await transactions(update, context, text)
             return
 
-        else: # Regular user
+        else:
             if command.startswith("vouch"):
                 await vouches(update, context, text)
                 return
@@ -399,11 +443,6 @@ async def master_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def check_paid_invoices(context: ContextTypes.DEFAULT_TYPE):
-    """
-    Checks for paid invoices, EDITS the original customer message to 'Confirmed',
-    and notifies the admin.
-    """
-    # Find invoices that are paid but haven't been processed by the bot yet
     paid_invoices = mysql_handler.get_paid_unnotified_invoices_from_mysql()
     
     if not paid_invoices:
@@ -481,9 +520,6 @@ async def check_pending_transactions(context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     application = Application.builder().token(TOKEN).build()
-    
-    # --- UPDATED HANDLER TO CATCH ALL RELEVANT MESSAGE TYPES ---
-    # This will now trigger for text, commands, stickers, photos, etc.
     application.add_handler(MessageHandler(filters.ALL, master_handler))
     
     job_queue = application.job_queue
