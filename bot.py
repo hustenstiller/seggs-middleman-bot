@@ -52,7 +52,7 @@ PAYMENT_SYSTEMS = {
 PAYMENT_LIMITS = {
     'fkrub':         {'min': 1001, 'max': 300000, 'currency': 'RUB'},
     'fkusd':         {'min': 1, 'max': 5000, 'currency': 'USD'},
-    'cardrub':       {'min': 1001, 'max': 100000, 'currency': 'RUB'},
+    'cardrub':       {'min': 5001, 'max': 100000, 'currency': 'RUB'},
     'yoomoney':      {'min': 1001, 'max': 100000, 'currency': 'RUB'},
     'visarub':       {'min': 1001, 'max': 150000, 'currency': 'RUB'},
     'mastercardrub': {'min': 1001, 'max': 150000, 'currency': 'RUB'},
@@ -278,7 +278,7 @@ async def delete_vouch_command(update: Update, context: ContextTypes.DEFAULT_TYP
         print(f"A critical error occurred in delete_vouch_command: {e}")
     
 async def remind_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handles the /remind command for admins."""
+    """Handles the /remind command for all users."""
     try:
         message = update.message or update.business_message
         command_parts = message.text.split()
@@ -289,7 +289,7 @@ async def remind_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "<b>Example:</b> <code>/remind 01/01/2026 00:00</code>",
                 parse_mode="HTML"
             )
-            await delete_admin_message(update, context)
+            await delete_command_message(update, context)
             return
 
         date_str, time_str = command_parts[1], command_parts[2]
@@ -303,7 +303,7 @@ async def remind_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             if utc_dt < datetime.now(timezone.utc):
                 await message.reply_text("⚠️ The reminder time cannot be in the past.", parse_mode="HTML")
-                await delete_admin_message(update, context)
+                await delete_command_message(update, context)
                 return
 
         except (ValueError, UnknownTimeZoneError) as e:
@@ -312,7 +312,7 @@ async def remind_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "⚠️ Invalid date/time format. Please use <code>DD/MM/YYYY HH:MM</code>.",
                 parse_mode="HTML"
             )
-            await delete_admin_message(update, context)
+            await delete_command_message(update, context)
             return
 
         context.user_data['reminder_datetime_utc'] = utc_dt
@@ -322,12 +322,12 @@ async def remind_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Please send the text for the reminder now.",
             parse_mode="HTML"
         )
-        await delete_admin_message(update, context)
+        await delete_command_message(update, context)
     except Exception as e:
         print(f"A critical error occurred in remind_command: {e}")
 
-async def delete_admin_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """A helper function to safely delete the admin's original command message."""
+async def delete_command_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """A helper function to safely delete the user's original command message."""
     try:
         message = update.message or update.business_message
         if not message:
@@ -341,7 +341,7 @@ async def delete_admin_message(update: Update, context: ContextTypes.DEFAULT_TYP
                 message_ids=[message.message_id]
             )
     except telegram.error.BadRequest as e:
-        print(f"Info: Could not delete admin's command: {e}. (Normal for old messages).")
+        print(f"Info: Could not delete user's command: {e}. (Normal for old messages).")
 
 async def master_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handles ALL incoming messages and routes them based on the new permission rules."""
@@ -380,7 +380,8 @@ async def master_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except Exception as e:
                 print(f"An error occurred while sending the welcome message: {e}")
 
-        if user_id in admin_id and 'reminder_datetime_utc' in context.user_data:
+        # Universal handler for when a user is in the process of setting a reminder
+        if 'reminder_datetime_utc' in context.user_data:
             reminder_text = message.text
             remind_at_utc = context.user_data.pop('reminder_datetime_utc')
             
@@ -414,6 +415,12 @@ async def master_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         command_parts = text.split()
         command = command_parts[0].lower()
 
+        # --- Universal Commands ---
+        if command == "/remind":
+            await remind_command(update, context)
+            return
+
+        # --- Admin-Specific Commands ---
         if user_id in admin_id:
             if command in ["/start", "/proxy"]:
                 await start_command(update, context)
@@ -424,14 +431,11 @@ async def master_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if command == "/del_vouch":
                 await delete_vouch_command(update, context)
                 return
-            if command == "/remind":
-                await remind_command(update, context)
-                return
 
             if command.startswith("/invoice"):
                 if len(command_parts) < 2 or not command_parts[1].replace('.', '', 1).isdigit():
                     await message.reply_text("<b>Usage:</b> <code>/invoice[_{method}] [amount]</code>\n\n<b>Example:</b> <code>/invoice_btc 10.50</code>", parse_mode="HTML")
-                    await delete_admin_message(update, context)
+                    await delete_command_message(update, context)
                     return
 
                 amount = float(command_parts[1])
@@ -471,7 +475,7 @@ async def master_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                 f"<b>Min:</b> <code>${min_limit_usd:.2f}</code> | <b>Max:</b> <code>${max_limit_usd:.2f}</code>"
                             )
                             await message.reply_text(warning_text, parse_mode="HTML")
-                            await delete_admin_message(update, context)
+                            await delete_command_message(update, context)
                             return
 
                 order_id = str(int(time.time())) + str(secrets.randbelow(1000)).zfill(3)
@@ -497,7 +501,7 @@ async def master_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     chat_id=sent_message.chat.id, message_id=sent_message.message_id
                 )
                 
-                await delete_admin_message(update, context)
+                await delete_command_message(update, context)
                 return
             
             coin = command[1:] if command.startswith('/') else None
@@ -506,13 +510,14 @@ async def master_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     await wallet(update, context, coin, command_parts[1])
                 else:
                     await message.reply_text(f"<b>Usage:</b> <code>/{coin} [amount]</code>", parse_mode="HTML")
-                    await delete_admin_message(update, context)
+                    await delete_command_message(update, context)
                 return
 
             await transactions(update, context, text)
             return
 
-        else: # Regular user
+        # --- Regular User Commands ---
+        else:
             if text.lower().startswith("vouch"):
                 await vouches(update, context, text)
                 return
