@@ -20,8 +20,7 @@ load_dotenv()
 
 TIMEOUT_LIMIT = timedelta(hours=1)
 TOKEN = os.getenv("TOKEN")
-print(TOKEN)
-admin_id = [8236705519, 7720291721]
+admin_id = [8236705519]
 
 PLACEHOLDER_EMAIL = "user@vouches.my"
 PLACEHOLDER_IP = "1.1.1.1" 
@@ -297,7 +296,7 @@ async def remind_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         datetime_str = f"{date_str} {time_str}"
         
         try:
-            ist_tz = pytz_timezone("Asia/Kolkata")
+            ist_tz = pytz_timezone("Europe/Berlin")
             naive_dt = datetime.strptime(datetime_str, "%d/%m/%Y %H:%M")
             ist_dt = ist_tz.localize(naive_dt)
             utc_dt = ist_dt.astimezone(timezone.utc)
