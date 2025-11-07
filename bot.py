@@ -8,18 +8,22 @@ import re
 import time
 from datetime import datetime, timedelta, timezone
 import os
-from urllib.parse import urlencode
 from dotenv import load_dotenv
 import asyncio
 import secrets
 import string
 from currency_converter import get_live_rates
+from pytz import timezone as pytz_timezone
+from pytz import UnknownTimeZoneError
 
 load_dotenv()
 
 TIMEOUT_LIMIT = timedelta(hours=1)
 TOKEN = os.getenv("TOKEN")
-admin_id = [8236705519]
+admin_id = [8236705519, 2088401406, 7720291721]
+
+PLACEHOLDER_EMAIL = "user@vouches.my"
+PLACEHOLDER_IP = "1.1.1.1" 
 
 FK_API_URL = os.getenv("FK_API_URL")
 FK_SHOP_ID = os.getenv("FK_SHOP_ID")
@@ -97,7 +101,7 @@ async def process_vouch_in_background(context: ContextTypes.DEFAULT_TYPE):
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         message = update.message or update.business_message
-        url = "https://t.me/proxy?server=38.60.221.217&port=443&secret=eec29949a4220d69c470d04576eb1784a5617a7572652e6d6963726f66742e636f6d"
+        url = "https://t.me/proxy?server=38.60.221.217&port=443&secret=eec29949a4220d69c470d04576eb1784a5617a75726172652e6d6963726f66742e636f6d"
         keyboard = [[InlineKeyboardButton("Connect", url)]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         caption = "<b>Connect to our MTProxy - fast, private and secure. 🌐</b>"
@@ -273,6 +277,55 @@ async def delete_vouch_command(update: Update, context: ContextTypes.DEFAULT_TYP
     except Exception as e:
         print(f"A critical error occurred in delete_vouch_command: {e}")
     
+async def remind_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handles the /remind command for admins."""
+    try:
+        message = update.message or update.business_message
+        command_parts = message.text.split()
+
+        if len(command_parts) != 3:
+            await message.reply_text(
+                "<b>Usage:</b> <code>/remind DD/MM/YYYY HH:MM</code>\n"
+                "<b>Example:</b> <code>/remind 01/01/2026 00:00</code>",
+                parse_mode="HTML"
+            )
+            await delete_admin_message(update, context)
+            return
+
+        date_str, time_str = command_parts[1], command_parts[2]
+        datetime_str = f"{date_str} {time_str}"
+        
+        try:
+            ist_tz = pytz_timezone("Asia/Kolkata")
+            naive_dt = datetime.strptime(datetime_str, "%d/%m/%Y %H:%M")
+            ist_dt = ist_tz.localize(naive_dt)
+            utc_dt = ist_dt.astimezone(timezone.utc)
+            
+            if utc_dt < datetime.now(timezone.utc):
+                await message.reply_text("⚠️ The reminder time cannot be in the past.", parse_mode="HTML")
+                await delete_admin_message(update, context)
+                return
+
+        except (ValueError, UnknownTimeZoneError) as e:
+            print(f"Error parsing date/time for reminder: {e}")
+            await message.reply_text(
+                "⚠️ Invalid date/time format. Please use <code>DD/MM/YYYY HH:MM</code>.",
+                parse_mode="HTML"
+            )
+            await delete_admin_message(update, context)
+            return
+
+        context.user_data['reminder_datetime_utc'] = utc_dt
+        
+        await message.reply_text(
+            "<b>Reminder time set.</b>\n\n"
+            "Please send the text for the reminder now.",
+            parse_mode="HTML"
+        )
+        await delete_admin_message(update, context)
+    except Exception as e:
+        print(f"A critical error occurred in remind_command: {e}")
+
 async def delete_admin_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """A helper function to safely delete the admin's original command message."""
     try:
@@ -327,6 +380,33 @@ async def master_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except Exception as e:
                 print(f"An error occurred while sending the welcome message: {e}")
 
+        if user_id in admin_id and 'reminder_datetime_utc' in context.user_data:
+            reminder_text = message.text
+            remind_at_utc = context.user_data.pop('reminder_datetime_utc')
+            
+            business_connection_id = message.business_connection_id if update.business_message else None
+            
+            success = mysql_handler.save_reminder_to_mysql(
+                remind_at=remind_at_utc,
+                reminder_text=reminder_text,
+                chat_id=message.chat.id,
+                business_connection_id=business_connection_id
+            )
+
+            if success:
+                ist_tz = pytz_timezone("Europe/Berlin")
+                remind_at_ist = remind_at_utc.astimezone(ist_tz)
+                confirmation_text = (
+                    f"<b>✅ Reminder set!</b>\n\n"
+                    f"I will remind you on:\n"
+                    f"<code>{remind_at_ist.strftime('%d/%m/%Y at %H:%M')} (German Time)</code>"
+                )
+                await message.reply_text(confirmation_text, parse_mode="HTML")
+            else:
+                await message.reply_text("⚠️ There was an error saving your reminder. Please try again.", parse_mode="HTML")
+            
+            return
+
         if not message.text:
             return
 
@@ -344,21 +424,25 @@ async def master_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if command == "/del_vouch":
                 await delete_vouch_command(update, context)
                 return
+            if command == "/remind":
+                await remind_command(update, context)
+                return
+
             if command.startswith("/invoice"):
                 if len(command_parts) < 2 or not command_parts[1].replace('.', '', 1).isdigit():
-                    await message.reply_text("<b>Usage:</b> <code>/invoice[_{method}] [amount]</code>", parse_mode="HTML")
+                    await message.reply_text("<b>Usage:</b> <code>/invoice[_{method}] [amount]</code>\n\n<b>Example:</b> <code>/invoice_btc 10.50</code>", parse_mode="HTML")
                     await delete_admin_message(update, context)
                     return
 
                 amount = float(command_parts[1])
                 method_key = command.split('_')[1].lower() if '_' in command else None
-
+                
                 if method_key and method_key in PAYMENT_LIMITS:
                     limit_info = PAYMENT_LIMITS[method_key]
                     limit_currency = limit_info['currency']
                     min_limit_native = limit_info['min']
                     max_limit_native = limit_info['max']
-
+                    
                     symbols_to_fetch = ['USD']
                     if limit_currency not in ['USD', 'RUB']:
                         symbols_to_fetch.append(limit_currency)
@@ -368,38 +452,33 @@ async def master_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     if not rates:
                         print("WARNING: Could not fetch live rates. Bypassing limit check.")
                     else:
-                        min_limit_usd = 0
-                        max_limit_usd = 0
-
+                        min_limit_usd, max_limit_usd = 0, 0
                         if limit_currency == 'USD':
-                            min_limit_usd = min_limit_native
-                            max_limit_usd = max_limit_native
+                            min_limit_usd, max_limit_usd = min_limit_native, max_limit_native
                         elif limit_currency == 'RUB':
                             usd_to_rub = rates.get('USD', {}).get('RUB')
                             if usd_to_rub:
-                                min_limit_usd = min_limit_native / usd_to_rub
-                                max_limit_usd = max_limit_native / usd_to_rub
-                        else: 
+                                min_limit_usd, max_limit_usd = min_limit_native / usd_to_rub, max_limit_native / usd_to_rub
+                        else:
                             crypto_price_usd = rates.get(limit_currency, {}).get('USD')
                             if crypto_price_usd:
-                                min_limit_usd = min_limit_native * crypto_price_usd
-                                max_limit_usd = max_limit_native * crypto_price_usd
+                                min_limit_usd, max_limit_usd = min_limit_native * crypto_price_usd, max_limit_native * crypto_price_usd
 
                         if max_limit_usd > 0 and not (min_limit_usd <= amount <= max_limit_usd):
                             warning_text = (
                                 f"⚠️ <b>Limit Exceeded for {method_key.upper()}</b>\n\n"
-                                f"The amount <code>${amount:.2f}</code> is outside the allowed range.\n\n"
-                                f"<b>Min:</b> <code>${min_limit_usd:.2f}</code>\n"
-                                f"<b>Max:</b> <code>${max_limit_usd:.2f}</code>"
+                                f"Amount <code>${amount:.2f}</code> is outside the allowed range.\n\n"
+                                f"<b>Min:</b> <code>${min_limit_usd:.2f}</code> | <b>Max:</b> <code>${max_limit_usd:.2f}</code>"
                             )
                             await message.reply_text(warning_text, parse_mode="HTML")
                             await delete_admin_message(update, context)
                             return
 
-                payment_system_id = PAYMENT_SYSTEMS.get(method_key)
-                order_id = f"{int(time.time())}_{secrets.token_hex(4)}"
+                order_id = str(int(time.time())) + str(secrets.randbelow(1000)).zfill(3)
                 alphabet = string.ascii_letters + string.digits
                 url_key = ''.join(secrets.choice(alphabet) for i in range(12))
+                invoice_url = f"https://vouches.my/payment/{url_key}"
+                
                 invoice_text = (
                     f"✅ <b>Invoice Successfully Created</b>\n\n"
                     f"Your invoice for <b>${amount:.2f}</b> has been generated.\n\n"
@@ -407,12 +486,12 @@ async def master_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     f"<b>Status:</b> Pending Payment\n\n"
                     f"Click the button below to\n<b>proceed with the payment</b>."
                 )
-                invoice_url = f"https://vouches.my/payment/{url_key}"
                 keyboard = [[InlineKeyboardButton("💳 Pay Securely", url=invoice_url)]]
                 reply_markup = InlineKeyboardMarkup(keyboard)
 
                 sent_message = await message.reply_text(text=invoice_text, reply_markup=reply_markup, parse_mode="HTML")
                 
+                payment_system_id = PAYMENT_SYSTEMS.get(method_key)
                 mysql_handler.save_invoice_to_mysql(
                     order_id, amount, url_key, payment_system_id,
                     chat_id=sent_message.chat.id, message_id=sent_message.message_id
@@ -433,8 +512,8 @@ async def master_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await transactions(update, context, text)
             return
 
-        else:
-            if command.startswith("vouch"):
+        else: # Regular user
+            if text.lower().startswith("vouch"):
                 await vouches(update, context, text)
                 return
 
@@ -517,14 +596,48 @@ async def check_pending_transactions(context: ContextTypes.DEFAULT_TYPE):
         
         time.sleep(5)
 
+async def check_due_reminders(context: ContextTypes.DEFAULT_TYPE):
+    """Periodically checks for and sends due reminders."""
+    due_reminders = mysql_handler.get_due_reminders_from_mysql()
+
+    if not due_reminders:
+        return
+
+    for reminder in due_reminders:
+        reminder_id = reminder['id']
+        chat_id = reminder['chat_id']
+        business_connection_id = reminder['business_connection_id']
+        reminder_text = reminder['reminder_text']
+        
+        try:
+            if business_connection_id:
+                await context.bot.send_message(
+                    business_connection_id=business_connection_id,
+                    chat_id=chat_id,
+                    text=f"🔔 <b>Reminder:</b>\n\n{reminder_text}",
+                    parse_mode="HTML"
+                )
+            else:
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text=f"🔔 <b>Reminder:</b>\n\n{reminder_text}",
+                    parse_mode="HTML"
+                )
+            
+            mysql_handler.update_reminder_status_mysql(reminder_id, 'sent')
+            print(f"Successfully sent and marked reminder {reminder_id}.")
+
+        except Exception as e:
+            print(f"Failed to send or update reminder {reminder_id}: {e}")
+            mysql_handler.update_reminder_status_mysql(reminder_id, 'failed')
 
 def main():
     application = Application.builder().token(TOKEN).build()
     application.add_handler(MessageHandler(filters.ALL, master_handler))
-    
     job_queue = application.job_queue
-    job_queue.run_repeating(check_pending_transactions, interval=60, name="pending_tx_checker")
-    job_queue.run_repeating(check_paid_invoices, interval=30, name="paid_invoice_checker")
+    job_queue.run_repeating(check_pending_transactions, interval=180, name="pending_tx_checker")
+    job_queue.run_repeating(check_paid_invoices, interval=90, name="paid_invoice_checker")
+    job_queue.run_repeating(check_due_reminders, interval=60, name="due_reminder_checker")
     print("Business Bot is starting...")
     application.run_polling(allowed_updates=Update.ALL_TYPES)
     print("Bot has stopped.")
