@@ -20,6 +20,7 @@ load_dotenv()
 
 TIMEOUT_LIMIT = timedelta(hours=1)
 TOKEN = os.getenv("TOKEN")
+print(TOKEN)
 admin_id = [8236705519, 7720291721]
 
 PLACEHOLDER_EMAIL = "user@vouches.my"
