@@ -12,6 +12,21 @@ MYSQL_CONFIG = {
     'database': os.getenv("database")
 }
 
+try:
+    db_pool = mysql.connector.pooling.MySQLConnectionPool(
+        pool_name="bot_pool",
+        pool_size=12,
+        user=os.getenv("user"),
+        password=os.getenv("password"),
+        host=os.getenv("host"),
+        database=os.getenv("database"),
+        pool_reset_session=True
+    )
+    print("MySQL Connection Pool created successfully.")
+except mysql.connector.Error as err:
+    print(f"Error creating MySQL connection pool: {err}")
+    db_pool = None
+
 def get_mysql_connection():
     """Establishes a connection to the MySQL database."""
     try:
@@ -273,11 +288,9 @@ def save_reminder_to_mysql(remind_at, reminder_text, chat_id, business_connectio
         return False
 
     cursor = conn.cursor()
-    # Updated query to include the new business_connection_id field
     query = ("INSERT INTO reminders (remind_at, reminder_text, chat_id, business_connection_id, status) "
              "VALUES (%s, %s, %s, %s, 'pending')")
     try:
-        # Updated execute call with the new parameter
         cursor.execute(query, (remind_at, reminder_text, chat_id, business_connection_id))
         conn.commit()
         print(f"Successfully saved reminder for chat_id {chat_id} at {remind_at}.")
@@ -296,7 +309,6 @@ def get_due_reminders_from_mysql():
         return []
 
     cursor = conn.cursor(dictionary=True)
-    # Updated query to fetch the new business_connection_id field
     query = "SELECT id, reminder_text, chat_id, business_connection_id FROM reminders WHERE remind_at <= NOW() AND status = 'pending'"
 
     reminders = []
