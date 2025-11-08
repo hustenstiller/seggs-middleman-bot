@@ -118,7 +118,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             elif update.business_message:
                 await context.bot.delete_business_messages(business_connection_id=message.business_connection_id, message_ids=[message.message_id])
         except telegram.error.BadRequest as e:
-            print(f"Info: Could not delete /start command: {e}. (Normal for old messages)")
+            print(f"Info: Could not delete .start command: {e}. (Normal for old messages)")
 
     except FileNotFoundError:
         print("ERROR: Asset file 'assets/welcome.jpeg' not found.")
@@ -154,7 +154,7 @@ async def invite_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             elif update.business_message:
                 await context.bot.delete_business_messages(business_connection_id=message.business_connection_id, message_ids=[message.message_id])
         except telegram.error.BadRequest as e:
-            print(f"Info: Could not delete /invite command: {e}. (Normal for old messages)")
+            print(f"Info: Could not delete .invite command: {e}. (Normal for old messages)")
 
     except Exception as e:
         print(f"Error in invite_command: {e}")
@@ -253,7 +253,7 @@ async def delete_vouch_command(update: Update, context: ContextTypes.DEFAULT_TYP
     try:
         message = update.message or update.business_message
         if not message.reply_to_message or not message.reply_to_message.text:
-            await message.reply_text("<b>Usage:</b> Reply to the vouch message you want to delete with <code>/del_vouch</code>.", parse_mode="HTML")
+            await message.reply_text("<b>Usage:</b> Reply to the vouch message you want to delete with <code>.del_vouch</code>.", parse_mode="HTML")
             return
 
         vouch_text_to_delete = mysql_handler.get_vouch_text_from_message(message.reply_to_message.text)
@@ -273,20 +273,20 @@ async def delete_vouch_command(update: Update, context: ContextTypes.DEFAULT_TYP
             elif update.business_message:
                 await context.bot.delete_business_messages(business_connection_id=message.business_connection_id, message_ids=[message.message_id])
         except telegram.error.BadRequest as e:
-            print(f"Info: Could not delete admin's /del_vouch command: {e}. (This is normal for old messages).")
+            print(f"Info: Could not delete admin's .del_vouch command: {e}. (This is normal for old messages).")
     except Exception as e:
         print(f"A critical error occurred in delete_vouch_command: {e}")
     
 async def remind_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handles the /remind command for all users."""
+    """Handles the .remind command for all users."""
     try:
         message = update.message or update.business_message
         command_parts = message.text.split()
 
         if len(command_parts) != 3:
             await message.reply_text(
-                "<b>Usage:</b> <code>/remind DD/MM/YYYY HH:MM</code>\n"
-                "<b>Example:</b> <code>/remind 01/01/2026 00:00</code>",
+                "<b>Usage:</b> <code>.remind DD/MM/YYYY HH:MM</code>\n"
+                "<b>Example:</b> <code>.remind 01/01/2026 00:00</code>",
                 parse_mode="HTML"
             )
             await delete_command_message(update, context)
@@ -415,26 +415,21 @@ async def master_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         command_parts = text.split()
         command = command_parts[0].lower()
 
-        # --- Universal Commands ---
-        if command == "/remind":
-            await remind_command(update, context)
-            return
-
         # --- Admin-Specific Commands ---
         if user_id in admin_id:
-            if command in ["/start", "/proxy"]:
+            if command in [".start", ".proxy"]:
                 await start_command(update, context)
                 return
-            if command == "/invite":
+            if command == ".invite":
                 await invite_command(update, context)
                 return
-            if command == "/del_vouch":
+            if command == ".del_vouch":
                 await delete_vouch_command(update, context)
                 return
 
-            if command.startswith("/invoice"):
+            if command.startswith(".invoice"):
                 if len(command_parts) < 2 or not command_parts[1].replace('.', '', 1).isdigit():
-                    await message.reply_text("<b>Usage:</b> <code>/invoice[_{method}] [amount]</code>\n\n<b>Example:</b> <code>/invoice_btc 10.50</code>", parse_mode="HTML")
+                    await message.reply_text("<b>Usage:</b> <code>.invoice[_{method}] [amount]</code>\n\n<b>Example:</b> <code>.invoice_btc 10.50</code>", parse_mode="HTML")
                     await delete_command_message(update, context)
                     return
 
@@ -504,23 +499,27 @@ async def master_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await delete_command_message(update, context)
                 return
             
-            coin = command[1:] if command.startswith('/') else None
+            coin = command[1:] if command.startswith('.') else None
             if coin in COINS.keys():
                 if len(command_parts) > 1:
                     await wallet(update, context, coin, command_parts[1])
                 else:
-                    await message.reply_text(f"<b>Usage:</b> <code>/{coin} [amount]</code>", parse_mode="HTML")
+                    await message.reply_text(f"<b>Usage:</b> <code>.{coin} [amount]</code>", parse_mode="HTML")
                     await delete_command_message(update, context)
                 return
 
-            await transactions(update, context, text)
+        # --- Universal Commands & Actions ---
+        if command == ".remind":
+            await remind_command(update, context)
             return
 
-        # --- Regular User Commands ---
-        else:
-            if text.lower().startswith("vouch"):
-                await vouches(update, context, text)
-                return
+        if text.lower().startswith("vouch"):
+            await vouches(update, context, text)
+            return
+            
+        # --- Transaction Check for All Users (as a fallback) ---
+        await transactions(update, context, text)
+        return
 
     except Exception as e:
         print(f"FATAL ERROR in master_handler, update was not processed: {e}")
