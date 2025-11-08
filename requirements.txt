@@ -1,7 +1,6 @@
-python-telegram-bot>=21.7
+python-telegram-bot[job-queue,webhooks]>=21.7
 aiohttp
 requests
-python-telegram-bot[job-queue]>=21.7
 mysql-connector-python
 python-dotenv
 pytz
