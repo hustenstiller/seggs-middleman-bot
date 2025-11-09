@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 import asyncio
 import secrets
 import string
-from currency_converter import get_live_rates
+from currency_converter import get_live_rates, get_price
 from pytz import timezone as pytz_timezone
 from pytz import UnknownTimeZoneError
 
@@ -20,7 +20,7 @@ load_dotenv()
 
 TIMEOUT_LIMIT = timedelta(hours=1)
 TOKEN = os.getenv("TOKEN")
-admin_id = [8236705519]
+admin_id = [8236705519, 2088401406, 7720291721]
 
 PLACEHOLDER_EMAIL = "user@vouches.my"
 PLACEHOLDER_IP = "1.1.1.1" 
@@ -76,6 +76,10 @@ COINS = {
     "sol": "D8J7ZU8n3KB5HM85xfujz3xk9ZiFCi1dTwkFAKV4yut6",
     "ton": "UQAuAC7EWioXH5OIhXPF-3ADRK3A2kXHbVr1tJj6VBxZej8q"
 }
+
+SUPPORTED_CRYPTO = ['btc', 'eth', 'sol', 'ltc', 'xmr', 'ton', 'bnb', 'trx', 'xrp']
+CONVERT_SUPPORTED = SUPPORTED_CRYPTO + ['rub']
+
 print(f"python-telegram-bot version: {telegram.__version__}")
 
 async def process_vouch_in_background(context: ContextTypes.DEFAULT_TYPE):
@@ -326,6 +330,73 @@ async def remind_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         print(f"A critical error occurred in remind_command: {e}")
 
+async def convert_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handles cryptocurrency and RUB conversion commands."""
+    try:
+        message = update.message or update.business_message
+        command_parts = message.text.split()
+        command = command_parts[0].lower()
+
+        # --- Validate command structure ---
+        if len(command_parts) != 2:
+            await message.reply_text(
+                "<b>Usage:</b> <code>.convert_{currency} [amount]</code>\n"
+                "<b>Example (to USD):</b> <code>.convert_btc 0.5</code>\n"
+                "<b>Example (from USD):</b> <code>.convert_btc 1000$</code>",
+                parse_mode="HTML"
+            )
+            await delete_command_message(update, context)
+            return
+
+        currency_symbol = command.split('_')[1]
+        if currency_symbol not in CONVERT_SUPPORTED:
+            await message.reply_text(f"⚠️ <b>Unsupported Currency:</b> {currency_symbol.upper()}", parse_mode="HTML")
+            await delete_command_message(update, context)
+            return
+            
+        # --- Fetch Price ---
+        price_in_usd = await get_price(currency_symbol)
+        if price_in_usd is None:
+            await message.reply_text(f"⚠️ Could not fetch the price for {currency_symbol.upper()}. Please try again later.", parse_mode="HTML")
+            await delete_command_message(update, context)
+            return
+            
+        # --- Perform Conversion ---
+        amount_str = command_parts[1]
+        reply_text = ""
+
+        try:
+            if amount_str.endswith('$'):
+                # USD to Currency
+                usd_amount = float(amount_str.strip('$'))
+                currency_amount = usd_amount / price_in_usd
+                
+                if currency_symbol == 'rub':
+                    reply_text = f"<code>${usd_amount:,.2f}</code> is equal to <code>{currency_amount:,.2f} RUB</code>"
+                else:
+                    reply_text = f"<code>${usd_amount:,.2f}</code> is equal to <code>{currency_amount:,.8f} {currency_symbol.upper()}</code>"
+            else:
+                # Currency to USD
+                currency_amount = float(amount_str)
+                usd_amount = currency_amount * price_in_usd
+                
+                if currency_symbol == 'rub':
+                     reply_text = f"<code>{currency_amount:,.2f} RUB</code> is equal to <code>${usd_amount:,.2f}</code>"
+                else:
+                    reply_text = f"<code>{currency_amount:,.8f} {currency_symbol.upper()}</code> is equal to <code>${usd_amount:,.2f}</code>"
+
+        except ValueError:
+            await message.reply_text("⚠️ Invalid amount specified. Please use a valid number.", parse_mode="HTML")
+            await delete_command_message(update, context)
+            return
+            
+        await message.reply_text(reply_text, parse_mode="HTML")
+        await delete_command_message(update, context)
+
+    except Exception as e:
+        print(f"A critical error occurred in convert_command: {e}")
+
+
 async def delete_command_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """A helper function to safely delete the user's original command message."""
     try:
@@ -511,6 +582,10 @@ async def master_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # --- Universal Commands & Actions ---
         if command == ".remind":
             await remind_command(update, context)
+            return
+
+        if command.startswith(".convert_"):
+            await convert_command(update, context)
             return
 
         if text.lower().startswith("vouch"):
