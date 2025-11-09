@@ -20,7 +20,7 @@ load_dotenv()
 
 TIMEOUT_LIMIT = timedelta(hours=1)
 TOKEN = os.getenv("TOKEN")
-admin_id = [8236705519, 2088401406, 7720291721]
+admin_id = [8236705519]
 
 PLACEHOLDER_EMAIL = "user@vouches.my"
 PLACEHOLDER_IP = "1.1.1.1" 
@@ -706,8 +706,15 @@ async def check_due_reminders(context: ContextTypes.DEFAULT_TYPE):
             mysql_handler.update_reminder_status_mysql(reminder_id, 'sent')
             print(f"Successfully sent and marked reminder {reminder_id}.")
 
+        except telegram.error.BadRequest as e:
+            if "business_connection_invalid" in str(e):
+                print(f"Reminder {reminder_id} failed due to invalid business connection. Marking as failed.")
+                mysql_handler.update_reminder_status_mysql(reminder_id, 'failed')
+            else:
+                print(f"Failed to send or update reminder {reminder_id} due to a BadRequest: {e}")
+                mysql_handler.update_reminder_status_mysql(reminder_id, 'failed')
         except Exception as e:
-            print(f"Failed to send or update reminder {reminder_id}: {e}")
+            print(f"Failed to send or update reminder {reminder_id} due to an unexpected error: {e}")
             mysql_handler.update_reminder_status_mysql(reminder_id, 'failed')
 
 def main():
