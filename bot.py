@@ -509,12 +509,16 @@ async def master_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     await delete_command_message(update, context)
                 return
 
-        # --- UPDATED: Route .convert and .convert_... to the same function ---
         if command == ".convert" or command.startswith(".convert_"):
             await convert_command(update, context)
             return
+            
         if command == ".remind": await remind_command(update, context); return
-        if text.lower().startswith("vouch"): await vouches(update, context, text); return
+
+        if text.lower().startswith("vouch"):
+            if user_id not in admin_id:
+                await vouches(update, context, text)
+            return
             
         await transactions(update, context, text); return
 
