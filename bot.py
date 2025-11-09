@@ -80,6 +80,17 @@ COINS = {
 SUPPORTED_CRYPTO = ['btc', 'eth', 'sol', 'ltc', 'xmr', 'ton', 'bnb', 'trx', 'xrp']
 CONVERT_SUPPORTED = SUPPORTED_CRYPTO + ['rub']
 
+# --- New Constant for Usage Text ---
+CONVERT_USAGE_TEXT = (
+    "<b>Usage:</b> <code>.convert_{currency} [amount]</code>\n\n"
+    "<b>Examples:</b>\n"
+    "• <u>Crypto/RUB to USD:</u>\n"
+    "  <code>.convert_btc 0.5</code>\n\n"
+    "• <u>USD to Crypto/RUB:</u>\n"
+    "  <code>.convert_ton 100$</code>\n\n"
+    f"<b>Supported Currencies:</b> {', '.join(CONVERT_SUPPORTED)}"
+)
+
 print(f"python-telegram-bot version: {telegram.__version__}")
 
 async def process_vouch_in_background(context: ContextTypes.DEFAULT_TYPE):
@@ -312,14 +323,9 @@ async def convert_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     command_parts = message.text.split()
     command = command_parts[0].lower()
 
-    # --- Validate command structure ---
-    if len(command_parts) != 2:
-        await message.reply_text(
-            "<b>Usage:</b> <code>.convert_{currency} [amount]</code>\n"
-            "<b>Example (to USD):</b> <code>.convert_btc 0.5</code>\n"
-            "<b>Example (from USD):</b> <code>.convert_btc 1000$</code>",
-            parse_mode="HTML"
-        )
+    # --- UPDATED: Handle general usage and wrong format ---
+    if command == ".convert" or len(command_parts) != 2:
+        await message.reply_text(CONVERT_USAGE_TEXT, parse_mode="HTML")
         await delete_command_message(update, context)
         return
 
@@ -421,32 +427,18 @@ async def master_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 elif update.business_message:
                     await context.bot.send_message(business_connection_id=message.business_connection_id, chat_id=message.chat.id, text=welcome_caption, reply_markup=reply_markup, parse_mode="HTML", disable_web_page_preview=True)
 
-        # Reminder setting logic
         if 'reminder_datetime_utc' in context.user_data:
             reminder_text = message.text
             remind_at_utc = context.user_data.pop('reminder_datetime_utc')
-            
             business_connection_id = message.business_connection_id if update.business_message else None
-            
-            success = mysql_handler.save_reminder_to_mysql(
-                remind_at=remind_at_utc,
-                reminder_text=reminder_text,
-                chat_id=message.chat.id,
-                business_connection_id=business_connection_id
-            )
-
+            success = mysql_handler.save_reminder_to_mysql(remind_at=remind_at_utc, reminder_text=reminder_text, chat_id=message.chat.id, business_connection_id=business_connection_id)
             if success:
                 ist_tz = pytz_timezone("Europe/Berlin")
                 remind_at_ist = remind_at_utc.astimezone(ist_tz)
-                confirmation_text = (
-                    f"<b>✅ Reminder set!</b>\n\n"
-                    f"I will remind you on:\n"
-                    f"<code>{remind_at_ist.strftime('%d/%m/%Y at %H:%M')} (German Time)</code>"
-                )
+                confirmation_text = (f"<b>✅ Reminder set!</b>\n\n" f"I will remind you on:\n" f"<code>{remind_at_ist.strftime('%d/%m/%Y at %H:%M')} (German Time)</code>")
                 await message.reply_text(confirmation_text, parse_mode="HTML")
             else:
                 await message.reply_text("⚠️ There was an error saving your reminder. Please try again.", parse_mode="HTML")
-            
             return
 
         if not message.text:
@@ -456,33 +448,26 @@ async def master_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         command_parts = text.split()
         command = command_parts[0].lower()
 
-        # --- Command Routing ---
         if user_id in admin_id:
             if command in [".start", ".proxy"]: await start_command(update, context); return
             if command == ".invite": await invite_command(update, context); return
             if command == ".del_vouch": await delete_vouch_command(update, context); return
             if command.startswith(".invoice"):
-                # ... (invoice logic is complex and self-contained, can stay here)
                 if len(command_parts) < 2 or not command_parts[1].replace('.', '', 1).isdigit():
                     await message.reply_text("<b>Usage:</b> <code>.invoice[_{method}] [amount]</code>\n\n<b>Example:</b> <code>.invoice_btc 10.50</code>", parse_mode="HTML")
                     await delete_command_message(update, context)
                     return
-
                 amount = float(command_parts[1])
                 method_key = command.split('_')[1].lower() if '_' in command else None
-                
                 if method_key and method_key in PAYMENT_LIMITS:
                     limit_info = PAYMENT_LIMITS[method_key]
                     limit_currency = limit_info['currency']
                     min_limit_native = limit_info['min']
                     max_limit_native = limit_info['max']
-                    
                     symbols_to_fetch = ['USD']
                     if limit_currency not in ['USD', 'RUB']:
                         symbols_to_fetch.append(limit_currency)
-                    
                     rates = await get_live_rates(symbols_to_fetch, ['USD', 'RUB'])
-
                     if not rates:
                         print("WARNING: Could not fetch live rates. Bypassing limit check.")
                     else:
@@ -499,41 +484,22 @@ async def master_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                 min_limit_usd, max_limit_usd = min_limit_native * crypto_price_usd, max_limit_native * crypto_price_usd
 
                         if max_limit_usd > 0 and not (min_limit_usd <= amount <= max_limit_usd):
-                            warning_text = (
-                                f"⚠️ <b>Limit Exceeded for {method_key.upper()}</b>\n\n"
-                                f"Amount <code>${amount:.2f}</code> is outside the allowed range.\n\n"
-                                f"<b>Min:</b> <code>${min_limit_usd:.2f}</code> | <b>Max:</b> <code>${max_limit_usd:.2f}</code>"
-                            )
+                            warning_text = (f"⚠️ <b>Limit Exceeded for {method_key.upper()}</b>\n\n" f"Amount <code>${amount:.2f}</code> is outside the allowed range.\n\n" f"<b>Min:</b> <code>${min_limit_usd:.2f}</code> | <b>Max:</b> <code>${max_limit_usd:.2f}</code>")
                             await message.reply_text(warning_text, parse_mode="HTML")
                             await delete_command_message(update, context)
                             return
-
                 order_id = str(int(time.time())) + str(secrets.randbelow(1000)).zfill(3)
                 alphabet = string.ascii_letters + string.digits
                 url_key = ''.join(secrets.choice(alphabet) for i in range(12))
                 invoice_url = f"https://vouches.my/payment/{url_key}"
-                
-                invoice_text = (
-                    f"✅ <b>Invoice Successfully Created</b>\n\n"
-                    f"Your invoice for <b>${amount:.2f}</b> has been generated.\n\n"
-                    f"Please <b>review the details</b> and ensure all information is accurate.\n\n"
-                    f"<b>Status:</b> Pending Payment\n\n"
-                    f"Click the button below to\n<b>proceed with the payment</b>."
-                )
+                invoice_text = (f"✅ <b>Invoice Successfully Created</b>\n\n" f"Your invoice for <b>${amount:.2f}</b> has been generated.\n\n" f"Please <b>review the details</b> and ensure all information is accurate.\n\n" f"<b>Status:</b> Pending Payment\n\n" f"Click the button below to\n<b>proceed with the payment</b>.")
                 keyboard = [[InlineKeyboardButton("💳 Pay Securely", url=invoice_url)]]
                 reply_markup = InlineKeyboardMarkup(keyboard)
-
                 sent_message = await message.reply_text(text=invoice_text, reply_markup=reply_markup, parse_mode="HTML")
-                
                 payment_system_id = PAYMENT_SYSTEMS.get(method_key)
-                mysql_handler.save_invoice_to_mysql(
-                    order_id, amount, url_key, payment_system_id,
-                    chat_id=sent_message.chat.id, message_id=sent_message.message_id
-                )
-                
+                mysql_handler.save_invoice_to_mysql(order_id, amount, url_key, payment_system_id, chat_id=sent_message.chat.id, message_id=sent_message.message_id)
                 await delete_command_message(update, context)
                 return
-            
             coin = command[1:] if command.startswith('.') else None
             if coin in COINS.keys():
                 if len(command_parts) > 1:
@@ -543,17 +509,19 @@ async def master_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     await delete_command_message(update, context)
                 return
 
-        # --- Universal Commands ---
+        # --- UPDATED: Route .convert and .convert_... to the same function ---
+        if command == ".convert" or command.startswith(".convert_"):
+            await convert_command(update, context)
+            return
         if command == ".remind": await remind_command(update, context); return
-        if command.startswith(".convert_"): await convert_command(update, context); return
         if text.lower().startswith("vouch"): await vouches(update, context, text); return
             
         await transactions(update, context, text); return
 
     except telegram.error.BadRequest as e:
-        if "business_connection_invalid" in str(e):
+        if "Business_connection_invalid" in str(e):
             user_info = update.effective_user.id if update.effective_user else "Unknown User"
-            print(f"Info: Bot blocked from replying due to an invalid business connection. User ID: {user_info}. User must reconnect.")
+            print(f"Info: Ignored a command from User ID {user_info} due to an invalid business connection. The user must reconnect their business account.")
         else:
             print(f"FATAL ERROR in master_handler (BadRequest): {e}")
     except Exception as e:
@@ -562,43 +530,20 @@ async def master_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def check_paid_invoices(context: ContextTypes.DEFAULT_TYPE):
     paid_invoices = mysql_handler.get_paid_unnotified_invoices_from_mysql()
-    
-    if not paid_invoices:
-        return
-
+    if not paid_invoices: return
     for invoice in paid_invoices:
-        invoice_id = invoice['invoice_id']
-        amount = invoice['amount']
-        customer_chat_id = invoice.get('customer_chat_id')
-        customer_message_id = invoice.get('customer_message_id')
-
+        invoice_id, amount = invoice['invoice_id'], invoice['amount']
+        customer_chat_id, customer_message_id = invoice.get('customer_chat_id'), invoice.get('customer_message_id')
         if customer_chat_id and customer_message_id:
             try:
-                confirmed_text = (
-                    f"✅ <b>Payment Confirmed!</b>\n\n"
-                    f"Your payment for <b>${amount:.2f}</b> has been successfully received.\n\n"
-                    f"<b>Invoice ID:</b> <code>{invoice_id}</code>\n"
-                    f"<b>Status:</b> Paid\n\n"
-                    f"Thank you for your transaction!"
-                )
-                await context.bot.edit_message_text(
-                    chat_id=customer_chat_id,
-                    message_id=customer_message_id,
-                    text=confirmed_text,
-                    parse_mode="HTML",
-                    reply_markup=None
-                )
+                confirmed_text = (f"✅ <b>Payment Confirmed!</b>\n\n" f"Your payment for <b>${amount:.2f}</b> has been successfully received.\n\n" f"<b>Invoice ID:</b> <code>{invoice_id}</code>\n" f"<b>Status:</b> Paid\n\n" f"Thank you for your transaction!")
+                await context.bot.edit_message_text(chat_id=customer_chat_id, message_id=customer_message_id, text=confirmed_text, parse_mode="HTML", reply_markup=None)
                 print(f"Successfully edited message for invoice {invoice_id}.")
             except Exception as e:
                 print(f"Could not edit message for invoice {invoice_id}: {e}")
-
         notification_text = f"✅ **Payment Received!**\n\nInvoice ID: `{invoice_id}`\nAmount: `${amount:.2f}`"
         try:
-            await context.bot.send_message(
-                chat_id=admin_id[0], 
-                text=notification_text, 
-                parse_mode="Markdown"
-            )
+            await context.bot.send_message(chat_id=admin_id[0], text=notification_text, parse_mode="Markdown")
         except Exception as e:
             print(f"Failed to send admin notification for invoice {invoice_id}: {e}")
         mysql_handler.update_invoice_notified_status_mysql(invoice_id)
@@ -608,64 +553,38 @@ async def check_pending_transactions(context: ContextTypes.DEFAULT_TYPE):
     """Periodically checks the status of pending transactions from the MySQL database."""
     pending_transactions = mysql_handler.get_pending_transactions_from_mysql()
     current_time = datetime.now(timezone.utc)
-
     for tx in pending_transactions:
         created_at = tx['date'].replace(tzinfo=timezone.utc)
-        
         if current_time - created_at > TIMEOUT_LIMIT:
             mysql_handler.update_transaction_status_in_mysql(tx['id'], 'failed')
             continue
-
         curr, status = check_transactions(tx['tx_id'], tx['chain'])
-        
         if status == 'confirmed':
             mysql_handler.update_transaction_status_in_mysql(tx['id'], 'confirmed', curr)
             reply_text = f"<b>✅ The {curr.upper()} transaction is confirmed!</b>"
             try:
-                chat_id = int(tx['chat_id'])
-                message_id = int(tx['message_id'])
-                business_connection_id = tx['business_connection_id']
-                
+                chat_id, message_id, business_connection_id = int(tx['chat_id']), int(tx['message_id']), tx['business_connection_id']
                 if business_connection_id:
                     await context.bot.send_message(business_connection_id=business_connection_id, chat_id=chat_id, text=reply_text, reply_to_message_id=message_id, parse_mode="HTML")
                 else:
                     await context.bot.send_message(chat_id=chat_id, text=reply_text, reply_to_message_id=message_id, parse_mode="HTML")
             except Exception as e:
                 print(f"Failed to send confirmation for tx {tx['tx_id']}: {e}")
-        
         await asyncio.sleep(5)
 
 async def check_due_reminders(context: ContextTypes.DEFAULT_TYPE):
     """Periodically checks for and sends due reminders."""
     due_reminders = mysql_handler.get_due_reminders_from_mysql()
-
-    if not due_reminders:
-        return
-
+    if not due_reminders: return
     for reminder in due_reminders:
-        reminder_id = reminder['id']
-        chat_id = reminder['chat_id']
-        business_connection_id = reminder['business_connection_id']
-        reminder_text = reminder['reminder_text']
-        
+        reminder_id, chat_id, business_connection_id, reminder_text = reminder['id'], reminder['chat_id'], reminder['business_connection_id'], reminder['reminder_text']
         try:
             if business_connection_id:
-                await context.bot.send_message(
-                    business_connection_id=business_connection_id,
-                    chat_id=chat_id,
-                    text=f"🔔 <b>Reminder:</b>\n\n{reminder_text}",
-                    parse_mode="HTML"
-                )
+                await context.bot.send_message(business_connection_id=business_connection_id, chat_id=chat_id, text=f"🔔 <b>Reminder:</b>\n\n{reminder_text}", parse_mode="HTML")
             else:
-                await context.bot.send_message(
-                    chat_id=chat_id,
-                    text=f"🔔 <b>Reminder:</b>\n\n{reminder_text}",
-                    parse_mode="HTML"
-                )
-            
+                await context.bot.send_message(chat_id=chat_id, text=f"🔔 <b>Reminder:</b>\n\n{reminder_text}", parse_mode="HTML")
             mysql_handler.update_reminder_status_mysql(reminder_id, 'sent')
             print(f"Successfully sent and marked reminder {reminder_id}.")
-
         except telegram.error.BadRequest as e:
             if "business_connection_invalid" in str(e):
                 print(f"Reminder {reminder_id} failed due to invalid business connection. Marking as failed.")
@@ -692,20 +611,11 @@ def main():
         port = int(os.getenv("PORT", "8443"))
         heroku_app_name = os.getenv("HEROKU_APP_NAME")
         secret_token = os.getenv("SECRET_TOKEN")
-
         if not all([heroku_app_name, secret_token]):
             print("FATAL ERROR: Missing HEROKU_APP_NAME or SECRET_TOKEN environment variables.")
             return
-
         webhook_url = f"https://{heroku_app_name}.herokuapp.com/{secret_token}"
-
-        application.run_webhook(
-            listen="0.0.0.0",
-            port=port,
-            url_path=secret_token,
-            webhook_url=webhook_url,
-            secret_token=secret_token
-        )
+        application.run_webhook(listen="0.0.0.0", port=port, url_path=secret_token, webhook_url=webhook_url, secret_token=secret_token)
     else:
         print("Bot is starting in Polling mode (local)...")
         application.run_polling(allowed_updates=Update.ALL_TYPES)
