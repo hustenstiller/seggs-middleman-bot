@@ -648,33 +648,3 @@ async def check_due_reminders(context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             print(f"Failed to send or update reminder {reminder_id} due to an unexpected error: {e}")
             mysql_handler.update_reminder_status_mysql(reminder_id, 'failed')
-
-# def main():
-#     """Starts the bot using webhooks on Heroku and polling locally."""
-#     application = Application.builder().token(TOKEN).build()
-#     application.add_handler(MessageHandler(filters.ALL, master_handler))
-
-#     job_queue = application.job_queue
-#     job_queue.run_repeating(check_pending_transactions, interval=180, name="pending_tx_checker")
-#     job_queue.run_repeating(check_paid_invoices, interval=90, name="paid_invoice_checker")
-#     job_queue.run_repeating(check_due_reminders, interval=60, name="due_reminder_checker")
-    
-#     if os.getenv("HEROKU") == "1":
-#         print("Bot is starting in Webhook mode (Heroku)...")
-#         port = int(os.getenv("PORT", "8443"))
-#         heroku_app_name = os.getenv("HEROKU_APP_NAME")
-#         secret_token = os.getenv("SECRET_TOKEN")
-#         if not all([heroku_app_name, secret_token]):
-#             print("FATAL ERROR: Missing HEROKU_APP_NAME or SECRET_TOKEN environment variables.")
-#             return
-#         webhook_url = f"https://{heroku_app_name}.herokuapp.com/{secret_token}"
-#         application.run_webhook(listen="0.0.0.0", port=port, url_path=secret_token, webhook_url=webhook_url, secret_token=secret_token)
-#     else:
-#         print("Bot is starting in Polling mode (local)...")
-#         application.run_polling(allowed_updates=Update.ALL_TYPES)
-    
-#     print("Bot has stopped.")
-
-
-# if __name__ == '__main__':
-#     main()
