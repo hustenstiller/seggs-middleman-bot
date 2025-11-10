@@ -103,9 +103,7 @@ print(f"python-telegram-bot version: {telegram.__version__}")
 @app.on_event("startup")
 async def startup_event():
     print("Initializing Telegram Bot Application...")
-    # Register handlers
     application.add_handler(MessageHandler(filters.ALL, master_handler))
-    # Start background jobs
     job_queue = application.job_queue
     job_queue.run_repeating(check_pending_transactions, interval=180)
     job_queue.run_repeating(check_paid_invoices, interval=90)
@@ -122,9 +120,6 @@ async def shutdown_event():
     application.job_queue.stop()
     await application.shutdown()
     print("Shutdown complete.")
-
-
-# --- FastAPI Web Routes ---
 
 @app.get("/")
 async def health_check():
@@ -372,7 +367,6 @@ async def convert_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     command_parts = message.text.split()
     command = command_parts[0].lower()
 
-    # --- UPDATED: Handle general usage and wrong format ---
     if command == ".convert" or len(command_parts) != 2:
         await message.reply_text(CONVERT_USAGE_TEXT, parse_mode="HTML")
         await delete_command_message(update, context)
@@ -384,20 +378,16 @@ async def convert_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await delete_command_message(update, context)
         return
         
-    # --- Fetch Price ---
     price_in_usd = await get_price(currency_symbol)
     if price_in_usd is None:
         await message.reply_text(f"⚠️ Could not fetch the price for {currency_symbol.upper()}. Please try again later.", parse_mode="HTML")
         await delete_command_message(update, context)
         return
-        
-    # --- Perform Conversion ---
     amount_str = command_parts[1]
     reply_text = ""
 
     try:
         if amount_str.endswith('$'):
-            # USD to Currency
             usd_amount = float(amount_str.strip('$'))
             currency_amount = usd_amount / price_in_usd
             
