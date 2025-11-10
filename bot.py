@@ -15,11 +15,16 @@ import string
 from currency_converter import get_live_rates, get_price
 from pytz import timezone as pytz_timezone
 from pytz import UnknownTimeZoneError
+from fastapi import FastAPI, Request, Response
+import uvicorn
 
 load_dotenv()
 
 TIMEOUT_LIMIT = timedelta(hours=1)
 TOKEN = os.getenv("TOKEN")
+SECRET_TOKEN = os.getenv("SECRET_TOKEN")
+HEROKU_APP_NAME = os.getenv("HEROKU_APP_NAME")
+WEBHOOK_URL = f"https://{HEROKU_APP_NAME}.herokuapp.com"
 admin_id = [8236705519]
 
 PLACEHOLDER_EMAIL = "user@vouches.my"
@@ -80,7 +85,6 @@ COINS = {
 SUPPORTED_CRYPTO = ['btc', 'eth', 'sol', 'ltc', 'xmr', 'ton', 'bnb', 'trx', 'xrp']
 CONVERT_SUPPORTED = SUPPORTED_CRYPTO + ['rub']
 
-# --- New Constant for Usage Text ---
 CONVERT_USAGE_TEXT = (
     "<b>Usage:</b> <code>.convert_{currency} [amount]</code>\n\n"
     "<b>Examples:</b>\n"
@@ -91,7 +95,52 @@ CONVERT_USAGE_TEXT = (
     f"<b>Supported Currencies:</b> {', '.join(CONVERT_SUPPORTED)}"
 )
 
+app = FastAPI(docs_url=None, redoc_url=None)
+application = Application.builder().token(TOKEN).build()
+
 print(f"python-telegram-bot version: {telegram.__version__}")
+
+@app.on_event("startup")
+async def startup_event():
+    print("Initializing Telegram Bot Application...")
+    # Register handlers
+    application.add_handler(MessageHandler(filters.ALL, master_handler))
+    # Start background jobs
+    job_queue = application.job_queue
+    job_queue.run_repeating(check_pending_transactions, interval=180)
+    job_queue.run_repeating(check_paid_invoices, interval=90)
+    job_queue.run_repeating(check_due_reminders, interval=60)
+    
+    await application.initialize()
+    await application.bot.set_webhook(url=f"{WEBHOOK_URL}/{SECRET_TOKEN}", allowed_updates=Update.ALL_TYPES)
+    job_queue.start()
+    print("Startup complete. Bot is running.")
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    print("Shutting down...")
+    application.job_queue.stop()
+    await application.shutdown()
+    print("Shutdown complete.")
+
+
+# --- FastAPI Web Routes ---
+
+@app.get("/")
+async def health_check():
+    """Health check endpoint for the pinger. Returns 200 OK."""
+    return Response(status_code=200)
+
+@app.post(f"/{SECRET_TOKEN}")
+async def telegram_webhook(request: Request):
+    """Handles incoming updates from Telegram."""
+    try:
+        update_data = await request.json()
+        update = Update.de_json(data=update_data, bot=application.bot)
+        await application.process_update(update)
+        return Response(status_code=200)
+    except Exception:
+        return Response(status_code=500)
 
 async def process_vouch_in_background(context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -600,32 +649,32 @@ async def check_due_reminders(context: ContextTypes.DEFAULT_TYPE):
             print(f"Failed to send or update reminder {reminder_id} due to an unexpected error: {e}")
             mysql_handler.update_reminder_status_mysql(reminder_id, 'failed')
 
-def main():
-    """Starts the bot using webhooks on Heroku and polling locally."""
-    application = Application.builder().token(TOKEN).build()
-    application.add_handler(MessageHandler(filters.ALL, master_handler))
+# def main():
+#     """Starts the bot using webhooks on Heroku and polling locally."""
+#     application = Application.builder().token(TOKEN).build()
+#     application.add_handler(MessageHandler(filters.ALL, master_handler))
 
-    job_queue = application.job_queue
-    job_queue.run_repeating(check_pending_transactions, interval=180, name="pending_tx_checker")
-    job_queue.run_repeating(check_paid_invoices, interval=90, name="paid_invoice_checker")
-    job_queue.run_repeating(check_due_reminders, interval=60, name="due_reminder_checker")
+#     job_queue = application.job_queue
+#     job_queue.run_repeating(check_pending_transactions, interval=180, name="pending_tx_checker")
+#     job_queue.run_repeating(check_paid_invoices, interval=90, name="paid_invoice_checker")
+#     job_queue.run_repeating(check_due_reminders, interval=60, name="due_reminder_checker")
     
-    if os.getenv("HEROKU") == "1":
-        print("Bot is starting in Webhook mode (Heroku)...")
-        port = int(os.getenv("PORT", "8443"))
-        heroku_app_name = os.getenv("HEROKU_APP_NAME")
-        secret_token = os.getenv("SECRET_TOKEN")
-        if not all([heroku_app_name, secret_token]):
-            print("FATAL ERROR: Missing HEROKU_APP_NAME or SECRET_TOKEN environment variables.")
-            return
-        webhook_url = f"https://{heroku_app_name}.herokuapp.com/{secret_token}"
-        application.run_webhook(listen="0.0.0.0", port=port, url_path=secret_token, webhook_url=webhook_url, secret_token=secret_token)
-    else:
-        print("Bot is starting in Polling mode (local)...")
-        application.run_polling(allowed_updates=Update.ALL_TYPES)
+#     if os.getenv("HEROKU") == "1":
+#         print("Bot is starting in Webhook mode (Heroku)...")
+#         port = int(os.getenv("PORT", "8443"))
+#         heroku_app_name = os.getenv("HEROKU_APP_NAME")
+#         secret_token = os.getenv("SECRET_TOKEN")
+#         if not all([heroku_app_name, secret_token]):
+#             print("FATAL ERROR: Missing HEROKU_APP_NAME or SECRET_TOKEN environment variables.")
+#             return
+#         webhook_url = f"https://{heroku_app_name}.herokuapp.com/{secret_token}"
+#         application.run_webhook(listen="0.0.0.0", port=port, url_path=secret_token, webhook_url=webhook_url, secret_token=secret_token)
+#     else:
+#         print("Bot is starting in Polling mode (local)...")
+#         application.run_polling(allowed_updates=Update.ALL_TYPES)
     
-    print("Bot has stopped.")
+#     print("Bot has stopped.")
 
 
-if __name__ == '__main__':
-    main()
+# if __name__ == '__main__':
+#     main()

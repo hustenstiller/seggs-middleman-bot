@@ -4,3 +4,5 @@ requests
 mysql-connector-python
 python-dotenv
 pytz
+fastapi
+uvicorn[standard]
