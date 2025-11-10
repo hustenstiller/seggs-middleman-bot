@@ -111,7 +111,7 @@ async def startup_event():
     
     await application.initialize()
     await application.bot.set_webhook(url=f"{WEBHOOK_URL}/{SECRET_TOKEN}", allowed_updates=Update.ALL_TYPES)
-    job_queue.start()
+    await job_queue.start()
     print("Startup complete. Bot is running.")
 
 @app.on_event("shutdown")
