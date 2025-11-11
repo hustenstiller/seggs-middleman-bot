@@ -28,12 +28,17 @@ except mysql.connector.Error as err:
     db_pool = None
 
 def get_mysql_connection():
-    """Establishes a connection to the MySQL database."""
+    """
+    CORRECT: Gets a reusable connection from the established pool.
+    """
+    if db_pool is None:
+        print("Error: Connection pool is not available.")
+        return None
     try:
-        conn = mysql.connector.connect(**MYSQL_CONFIG)
-        return conn
+        # This borrows a connection from the pool. It does NOT create a new one.
+        return db_pool.get_connection()
     except mysql.connector.Error as err:
-        print(f"Error connecting to MySQL: {err}")
+        print(f"Error getting connection from pool: {err}")
         return None
 
 def permanently_delete_vouches():
@@ -57,15 +62,85 @@ def permanently_delete_vouches():
         if conn:
             conn.rollback()
     finally:
-        # This returns the connection to the pool for reuse.
         if conn and conn.is_connected():
             if cursor:
                 cursor.close()
             conn.close()
 
+# NEW: Checks if the user has permission to vouch
+def has_permission_to_vouch(user_id: int) -> bool:
+    """Checks the `users` table to see if a user has the `can_vouch` flag set to true."""
+    conn = get_mysql_connection()
+    if not conn:
+        return False  # Fail safe: prevent vouches if DB is down
+
+    can_vouch = False
+    cursor = None
+    try:
+        cursor = conn.cursor()
+        query = "SELECT can_vouch FROM users WHERE user_id = %s"
+        cursor.execute(query, (user_id,))
+        result = cursor.fetchone()
+        if result and result[0] == 1:
+            can_vouch = True
+    except mysql.connector.Error as err:
+        print(f"MySQL Error checking vouch permission: {err}")
+    finally:
+        if conn and conn.is_connected():
+            if cursor:
+                cursor.close()
+            conn.close()
+    return can_vouch
+
+# NEW: Revokes a user's permission after they vouch
+def revoke_vouch_permission(user_id: int):
+    """Sets the `can_vouch` flag to 0 (false) for a user."""
+    conn = get_mysql_connection()
+    if not conn: return
+
+    cursor = None
+    try:
+        cursor = conn.cursor()
+        query = "UPDATE users SET can_vouch = 0 WHERE user_id = %s"
+        cursor.execute(query, (user_id,))
+        conn.commit()
+    except mysql.connector.Error as err:
+        print(f"MySQL Error revoking vouch permission: {err}")
+    finally:
+        if conn and conn.is_connected():
+            if cursor:
+                cursor.close()
+            conn.close()
+
+# NEW: Grants permission for the .reset command
+def grant_vouch_permission(user_id: int) -> bool:
+    """Sets the `can_vouch` flag to 1 (true) for a user, allowing them to vouch again."""
+    conn = get_mysql_connection()
+    if not conn: return False
+
+    success = False
+    cursor = None
+    try:
+        cursor = conn.cursor()
+        query = "UPDATE users SET can_vouch = 1 WHERE user_id = %s"
+        cursor.execute(query, (user_id,))
+        conn.commit()
+        if cursor.rowcount > 0:
+            print(f"Successfully granted vouch permission to user_id: {user_id}")
+            success = True
+        else:
+            print(f"Could not find user_id {user_id} to grant vouch permission.")
+    except mysql.connector.Error as err:
+        print(f"MySQL Error granting vouch permission: {err}")
+    finally:
+        if conn and conn.is_connected():
+            if cursor:
+                cursor.close()
+            conn.close()
+    return success
 
 def add_vouch_to_mysql(vouch_by, vouch_text, user_id):
-    """Adds a vouch to the MySQL database, including the user's ID."""
+    """Adds a vouch to the MySQL database. Does NOT change permission here."""
     conn = get_mysql_connection()
     if not conn:
         return False
@@ -79,10 +154,7 @@ def add_vouch_to_mysql(vouch_by, vouch_text, user_id):
         print(f"Successfully added vouch to MySQL from: {vouch_by} (User ID: {user_id})")
         return True
     except mysql.connector.Error as err:
-        if err.errno == errorcode.ER_DUP_ENTRY:
-            print(f"Duplicate vouch detected, not adding to MySQL.")
-        else:
-            print(f"MySQL Error: {err}")
+        print(f"MySQL Error adding vouch: {err}")
         return False
     finally:
         cursor.close()
@@ -315,24 +387,29 @@ def is_new_user(user_id: int) -> bool:
         cursor.close()
         conn.close()
 
+# MODIFIED: Ensure new users can vouch by default
 def add_user(user_id: int):
-    """Adds a new user's ID to the users table."""
+    """Adds a new user with vouching permission enabled by default."""
     conn = get_mysql_connection()
     if not conn: return False
     
-    cursor = conn.cursor()
-    query = "INSERT IGNORE INTO users (user_id) VALUES (%s)"
+    cursor = None
     try:
+        cursor = conn.cursor()
+        # Inserts a new user with can_vouch set to 1. IGNORE does nothing if user exists.
+        query = "INSERT IGNORE INTO users (user_id, can_vouch) VALUES (%s, 1)"
         cursor.execute(query, (user_id,))
         conn.commit()
-        print(f"New user added to database: {user_id}")
+        print(f"User added or already exists: {user_id}")
         return True
     except mysql.connector.Error as err:
         print(f"MySQL Error adding user: {err}")
         return False
     finally:
-        cursor.close()
-        conn.close()
+        if conn and conn.is_connected():
+            if cursor:
+                cursor.close()
+            conn.close()
 
 def update_invoice_message_id(invoice_id, message_id):
     """Updates an existing invoice with the message_id after it has been sent."""

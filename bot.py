@@ -159,13 +159,15 @@ async def process_vouch_in_background(context: ContextTypes.DEFAULT_TYPE):
         user_id = job_data['user_id']
 
         print(f"Background job started for vouch by {vouch_by} (User ID: {user_id})")
+        # Add the vouch to the vouches table
         success = await asyncio.to_thread(
             mysql_handler.add_vouch_to_mysql, vouch_by=vouch_by, vouch_text=comment, user_id=user_id
         )
         if success:
-            await asyncio.to_thread(
-                send_vouch_notification, vouch_by, comment
-            )
+            # If successful, send notification AND revoke permission for the next vouch
+            await asyncio.to_thread(send_vouch_notification, vouch_by, comment)
+            await asyncio.to_thread(mysql_handler.revoke_vouch_permission, user_id)
+            print(f"Vouch added and permission revoked for user {user_id}.")
         
         print(f"Background job finished for vouch by {vouch_by}")
 
@@ -228,8 +230,8 @@ async def vouches(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str)
     message = update.message or update.business_message
     user_id = message.from_user.id
 
-    if mysql_handler.has_user_vouched(user_id):
-        await message.reply_text("⚠️ You have already submitted a vouch. You cannot submit another one.", parse_mode="HTML")
+    if not mysql_handler.has_permission_to_vouch(user_id):
+        await message.reply_text("⚠️ You do not have permission to submit a vouch currently.", parse_mode="HTML")
         return
 
     parts = text.split()
@@ -514,10 +516,11 @@ async def master_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if command == ".del_vouch": await delete_vouch_command(update, context); return
             if command == ".reset":
                 user_to_reset_id = message.chat.id
-                if await asyncio.to_thread(mysql_handler.reset_vouch_for_user, user_to_reset_id):
-                    await message.reply_text("✅ This user's vouch has been reset. They can now vouch again.", parse_mode="HTML")
+                # MODIFIED: Call the new grant permission function
+                if await asyncio.to_thread(mysql_handler.grant_vouch_permission, user_to_reset_id):
+                    await message.reply_text("✅ This user's vouching permission has been reset. They can now vouch again.", parse_mode="HTML")
                 else:
-                    await message.reply_text("⚠️ An error occurred while resetting the vouch.", parse_mode="HTML")
+                    await message.reply_text("⚠️ Could not find this user to reset their permission.", parse_mode="HTML")
                 await delete_command_message(update, context)
                 return
             if command.startswith(".invoice"):
