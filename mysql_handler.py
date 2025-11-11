@@ -64,12 +64,11 @@ def permanently_delete_vouches():
                 cursor.close()
             conn.close()
 
-# NEW: Checks if the user has permission to vouch
 def has_permission_to_vouch(user_id: int) -> bool:
     """Checks the `users` table to see if a user has the `can_vouch` flag set to true."""
     conn = get_mysql_connection()
     if not conn:
-        return False  # Fail safe: prevent vouches if DB is down
+        return False
 
     can_vouch = False
     cursor = None
@@ -89,7 +88,6 @@ def has_permission_to_vouch(user_id: int) -> bool:
             conn.close()
     return can_vouch
 
-# NEW: Revokes a user's permission after they vouch
 def revoke_vouch_permission(user_id: int):
     """Sets the `can_vouch` flag to 0 (false) for a user."""
     conn = get_mysql_connection()
@@ -109,7 +107,6 @@ def revoke_vouch_permission(user_id: int):
                 cursor.close()
             conn.close()
 
-# NEW: Grants permission for the .reset command
 def grant_vouch_permission(user_id: int) -> bool:
     """Sets the `can_vouch` flag to 1 (true) for a user, allowing them to vouch again."""
     conn = get_mysql_connection()
@@ -161,17 +158,17 @@ def has_user_vouched(user_id: int) -> bool:
     """Checks if a user already has a visible vouch in the database."""
     conn = get_mysql_connection()
     if not conn:
-        return True # Fail safe: prevent duplicate vouches if DB is down
+        return True
 
     cursor = conn.cursor()
     query = "SELECT 1 FROM vouches WHERE user_id = %s AND status = 'visible' LIMIT 1"
     try:
         cursor.execute(query, (user_id,))
         result = cursor.fetchone()
-        return result is not None # Returns True if a vouch exists, False otherwise
+        return result is not None
     except mysql.connector.Error as err:
         print(f"MySQL Error checking vouch status: {err}")
-        return True # Fail safe
+        return True
     finally:
         cursor.close()
         conn.close()
@@ -192,7 +189,7 @@ def reset_vouch_for_user(user_id: int) -> bool:
             return True
         else:
             print(f"No active vouch found to reset for user_id: {user_id}")
-            return True # Not an error if no vouch existed
+            return True
     except mysql.connector.Error as err:
         print(f"MySQL Error on resetting vouch: {err}")
         return False
@@ -384,7 +381,6 @@ def is_new_user(user_id: int) -> bool:
         cursor.close()
         conn.close()
 
-# MODIFIED: Ensure new users can vouch by default
 def add_user(user_id: int):
     """Adds a new user with vouching permission enabled by default."""
     conn = get_mysql_connection()
@@ -393,7 +389,6 @@ def add_user(user_id: int):
     cursor = None
     try:
         cursor = conn.cursor()
-        # Inserts a new user with can_vouch set to 1. IGNORE does nothing if user exists.
         query = "INSERT IGNORE INTO users (user_id, can_vouch) VALUES (%s, 1)"
         cursor.execute(query, (user_id,))
         conn.commit()

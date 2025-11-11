@@ -101,12 +101,8 @@ application = Application.builder().token(TOKEN).build()
 print(f"python-telegram-bot version: {telegram.__version__}")
 
 async def cleanup_deleted_vouches(context: ContextTypes.DEFAULT_TYPE):
-    """
-    Job that runs periodically to permanently delete vouches marked as 'deleted'.
-    """
     print("Running scheduled job: Cleaning up deleted vouches...")
     try:
-        # Run the blocking database operation in a separate thread
         await asyncio.to_thread(mysql_handler.permanently_delete_vouches)
     except Exception as e:
         print(f"An unexpected error occurred during the vouch cleanup job: {e}")
@@ -120,7 +116,6 @@ async def startup_event():
     job_queue.run_repeating(check_pending_transactions, interval=180)
     job_queue.run_repeating(check_paid_invoices, interval=90)
     job_queue.run_repeating(check_due_reminders, interval=60)
-    # Schedule the new cleanup job to run every 5 minutes (300 seconds)
     job_queue.run_repeating(cleanup_deleted_vouches, interval=300)
     
     await application.initialize()
@@ -159,12 +154,10 @@ async def process_vouch_in_background(context: ContextTypes.DEFAULT_TYPE):
         user_id = job_data['user_id']
 
         print(f"Background job started for vouch by {vouch_by} (User ID: {user_id})")
-        # Add the vouch to the vouches table
         success = await asyncio.to_thread(
             mysql_handler.add_vouch_to_mysql, vouch_by=vouch_by, vouch_text=comment, user_id=user_id
         )
         if success:
-            # If successful, send notification AND revoke permission for the next vouch
             await asyncio.to_thread(send_vouch_notification, vouch_by, comment)
             await asyncio.to_thread(mysql_handler.revoke_vouch_permission, user_id)
             print(f"Vouch added and permission revoked for user {user_id}.")
@@ -419,7 +412,6 @@ async def convert_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else:
                 reply_text = f"<code>${usd_amount:,.2f}</code> is equal to <code>{currency_amount:,.8f} {currency_symbol.upper()}</code>"
         else:
-            # Currency to USD
             currency_amount = float(amount_str)
             usd_amount = currency_amount * price_in_usd
             
@@ -516,7 +508,6 @@ async def master_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if command == ".del_vouch": await delete_vouch_command(update, context); return
             if command == ".reset":
                 user_to_reset_id = message.chat.id
-                # MODIFIED: Call the new grant permission function
                 if await asyncio.to_thread(mysql_handler.grant_vouch_permission, user_to_reset_id):
                     await message.reply_text("✅ This user's vouching permission has been reset. They can now vouch again.", parse_mode="HTML")
                 else:
