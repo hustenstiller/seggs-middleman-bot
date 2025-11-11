@@ -34,14 +34,8 @@ async def get_live_rates(from_symbols: list[str], to_symbols: list[str]) -> dict
         return None
 
 async def get_crypto_price(crypto_symbol: str) -> float | None:
-    """
-    Fetches the price of a cryptocurrency in USD.
-    Tries Binance first, then falls back to CryptoCompare.
-    """
     symbol = crypto_symbol.upper()
     
-    # --- 1. Try Binance ---
-    # XMR is delisted from Binance, so skip directly to fallback
     if symbol != 'XMR':
         params = {'symbol': f'{symbol}USDT'}
         try:
@@ -57,7 +51,6 @@ async def get_crypto_price(crypto_symbol: str) -> float | None:
         except Exception as e:
             print(f"Error fetching price from Binance for {symbol}: {e}. Trying fallback.")
 
-    # --- 2. Fallback to CryptoCompare ---
     print(f"Using CryptoCompare as fallback for {symbol}")
     rates = await get_live_rates([symbol], ['USD'])
     if rates and symbol in rates and 'USD' in rates[symbol]:
@@ -73,13 +66,10 @@ async def get_price(symbol: str) -> float | None:
     symbol = symbol.lower()
     
     if symbol == 'rub':
-        # We need the price of 1 RUB in USD. The API gives us USD to RUB.
         rates = await get_live_rates(['USD'], ['RUB'])
         if rates and 'USD' in rates and 'RUB' in rates['USD']:
             usd_to_rub_rate = rates['USD']['RUB']
-            # To get RUB price in USD, we calculate 1 / (USD to RUB rate)
             return 1 / usd_to_rub_rate
-        return None # Fallback failed
+        return None
     else:
-        # Assume it's a cryptocurrency
         return await get_crypto_price(symbol)

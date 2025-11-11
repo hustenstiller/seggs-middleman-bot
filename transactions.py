@@ -19,7 +19,6 @@ def check_transactions(tx_id: str, chain: str):
 
                     if r.status_code == 429:
                         print("⚠️ Rate limit hit. Sleeping 10s...")
-                        # time.sleep(10)
                         continue
 
                     if r.status_code != 200:
@@ -64,7 +63,6 @@ def check_transactions(tx_id: str, chain: str):
 
                     if r.status_code == 429:
                         print("⚠️ Rate limit hit. Sleeping 10s...")
-                        # time.sleep(10)
                         continue
 
                     if r.status_code != 200:
