@@ -28,14 +28,11 @@ except mysql.connector.Error as err:
     db_pool = None
 
 def get_mysql_connection():
-    """
-    CORRECT: Gets a reusable connection from the established pool.
-    """
+    """Gets a reusable connection from the established pool."""
     if db_pool is None:
         print("Error: Connection pool is not available.")
         return None
     try:
-        # This borrows a connection from the pool. It does NOT create a new one.
         return db_pool.get_connection()
     except mysql.connector.Error as err:
         print(f"Error getting connection from pool: {err}")

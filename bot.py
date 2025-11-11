@@ -86,7 +86,7 @@ SUPPORTED_CRYPTO = ['btc', 'eth', 'sol', 'ltc', 'xmr', 'ton', 'bnb', 'trx', 'xrp
 CONVERT_SUPPORTED = SUPPORTED_CRYPTO + ['rub']
 
 CONVERT_USAGE_TEXT = (
-    "<b>Usage:</b> code>.convert_{currency} [amount]</code>\n\n"
+    "<b>Usage:</b> <code>.convert_{currency} [amount]</code>\n\n"
     "<b>Examples:</b>\n"
     "• <u>Crypto/RUB to USD:</u>\n"
     "  <code>.convert_btc 0.5</code>\n\n"
