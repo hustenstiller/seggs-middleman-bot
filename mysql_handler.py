@@ -36,25 +36,96 @@ def get_mysql_connection():
         print(f"Error connecting to MySQL: {err}")
         return None
 
-def add_vouch_to_mysql(vouch_by, vouch_text):
-    """Adds a vouch to the MySQL database, ignoring duplicates."""
+def permanently_delete_vouches():
+    """Permanently deletes vouches marked as 'deleted' from the database."""
+    conn = get_mysql_connection()
+    if not conn:
+        print("Error: Could not get a database connection for vouch cleanup.")
+        return
+
+    cursor = None
+    try:
+        cursor = conn.cursor()
+        query = "DELETE FROM vouches WHERE status = 'deleted'"
+        cursor.execute(query)
+        deleted_count = cursor.rowcount
+        conn.commit()
+        if deleted_count > 0:
+            print(f"Successfully purged {deleted_count} deleted vouches from the database.")
+    except mysql.connector.Error as err:
+        print(f"MySQL Error on purging vouches: {err}")
+        if conn:
+            conn.rollback()
+    finally:
+        # This returns the connection to the pool for reuse.
+        if conn and conn.is_connected():
+            if cursor:
+                cursor.close()
+            conn.close()
+
+
+def add_vouch_to_mysql(vouch_by, vouch_text, user_id):
+    """Adds a vouch to the MySQL database, including the user's ID."""
     conn = get_mysql_connection()
     if not conn:
         return False
     
     cursor = conn.cursor()
-    query = ("INSERT INTO vouches (vouch_by, vouch_text) "
-             "VALUES (%s, %s)")
+    query = ("INSERT INTO vouches (vouch_by, user_id, vouch_text) "
+             "VALUES (%s, %s, %s)")
     try:
-        cursor.execute(query, (vouch_by, vouch_text))
+        cursor.execute(query, (vouch_by, user_id, vouch_text))
         conn.commit()
-        print(f"Successfully added vouch to MySQL from: {vouch_by}")
+        print(f"Successfully added vouch to MySQL from: {vouch_by} (User ID: {user_id})")
         return True
     except mysql.connector.Error as err:
         if err.errno == errorcode.ER_DUP_ENTRY:
             print(f"Duplicate vouch detected, not adding to MySQL.")
         else:
             print(f"MySQL Error: {err}")
+        return False
+    finally:
+        cursor.close()
+        conn.close()
+
+def has_user_vouched(user_id: int) -> bool:
+    """Checks if a user already has a visible vouch in the database."""
+    conn = get_mysql_connection()
+    if not conn:
+        return True # Fail safe: prevent duplicate vouches if DB is down
+
+    cursor = conn.cursor()
+    query = "SELECT 1 FROM vouches WHERE user_id = %s AND status = 'visible' LIMIT 1"
+    try:
+        cursor.execute(query, (user_id,))
+        result = cursor.fetchone()
+        return result is not None # Returns True if a vouch exists, False otherwise
+    except mysql.connector.Error as err:
+        print(f"MySQL Error checking vouch status: {err}")
+        return True # Fail safe
+    finally:
+        cursor.close()
+        conn.close()
+
+def reset_vouch_for_user(user_id: int) -> bool:
+    """Resets a user's vouch by marking their existing vouch as 'deleted'."""
+    conn = get_mysql_connection()
+    if not conn:
+        return False
+
+    cursor = conn.cursor()
+    query = "UPDATE vouches SET status = 'deleted' WHERE user_id = %s AND status = 'visible' LIMIT 1"
+    try:
+        cursor.execute(query, (user_id,))
+        conn.commit()
+        if cursor.rowcount > 0:
+            print(f"Successfully reset vouch for user_id: {user_id}")
+            return True
+        else:
+            print(f"No active vouch found to reset for user_id: {user_id}")
+            return True # Not an error if no vouch existed
+    except mysql.connector.Error as err:
+        print(f"MySQL Error on resetting vouch: {err}")
         return False
     finally:
         cursor.close()

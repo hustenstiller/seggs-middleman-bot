@@ -86,7 +86,7 @@ SUPPORTED_CRYPTO = ['btc', 'eth', 'sol', 'ltc', 'xmr', 'ton', 'bnb', 'trx', 'xrp
 CONVERT_SUPPORTED = SUPPORTED_CRYPTO + ['rub']
 
 CONVERT_USAGE_TEXT = (
-    "<b>Usage:</b> <code>.convert_{currency} [amount]</code>\n\n"
+    "<b>Usage:</b> code>.convert_{currency} [amount]</code>\n\n"
     "<b>Examples:</b>\n"
     "• <u>Crypto/RUB to USD:</u>\n"
     "  <code>.convert_btc 0.5</code>\n\n"
@@ -100,6 +100,18 @@ application = Application.builder().token(TOKEN).build()
 
 print(f"python-telegram-bot version: {telegram.__version__}")
 
+async def cleanup_deleted_vouches(context: ContextTypes.DEFAULT_TYPE):
+    """
+    Job that runs periodically to permanently delete vouches marked as 'deleted'.
+    """
+    print("Running scheduled job: Cleaning up deleted vouches...")
+    try:
+        # Run the blocking database operation in a separate thread
+        await asyncio.to_thread(mysql_handler.permanently_delete_vouches)
+    except Exception as e:
+        print(f"An unexpected error occurred during the vouch cleanup job: {e}")
+
+
 @app.on_event("startup")
 async def startup_event():
     print("Initializing Telegram Bot Application...")
@@ -108,6 +120,8 @@ async def startup_event():
     job_queue.run_repeating(check_pending_transactions, interval=180)
     job_queue.run_repeating(check_paid_invoices, interval=90)
     job_queue.run_repeating(check_due_reminders, interval=60)
+    # Schedule the new cleanup job to run every 5 minutes (300 seconds)
+    job_queue.run_repeating(cleanup_deleted_vouches, interval=300)
     
     await application.initialize()
     await application.bot.set_webhook(url=f"{WEBHOOK_URL}/{SECRET_TOKEN}", allowed_updates=Update.ALL_TYPES)
@@ -142,10 +156,11 @@ async def process_vouch_in_background(context: ContextTypes.DEFAULT_TYPE):
         job_data = context.job.data
         vouch_by = job_data['vouch_by']
         comment = job_data['comment']
+        user_id = job_data['user_id']
 
-        print(f"Background job started for vouch by {vouch_by}")
+        print(f"Background job started for vouch by {vouch_by} (User ID: {user_id})")
         success = await asyncio.to_thread(
-            mysql_handler.add_vouch_to_mysql, vouch_by=vouch_by, vouch_text=comment
+            mysql_handler.add_vouch_to_mysql, vouch_by=vouch_by, vouch_text=comment, user_id=user_id
         )
         if success:
             await asyncio.to_thread(
@@ -211,6 +226,12 @@ async def invite_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def vouches(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
     message = update.message or update.business_message
+    user_id = message.from_user.id
+
+    if mysql_handler.has_user_vouched(user_id):
+        await message.reply_text("⚠️ You have already submitted a vouch. You cannot submit another one.", parse_mode="HTML")
+        return
+
     parts = text.split()
     if len(parts) < 2: return
     
@@ -232,7 +253,7 @@ async def vouches(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str)
     context.job_queue.run_once(
         process_vouch_in_background,
         when=1,
-        data={'vouch_by': vouch_by, 'comment': comment},
+        data={'vouch_by': vouch_by, 'comment': comment, 'user_id': user_id},
         name=f"vouch-{message.from_user.id}-{int(time.time())}"
     )
 
@@ -491,6 +512,14 @@ async def master_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if command in [".start", ".proxy"]: await start_command(update, context); return
             if command == ".invite": await invite_command(update, context); return
             if command == ".del_vouch": await delete_vouch_command(update, context); return
+            if command == ".reset":
+                user_to_reset_id = message.chat.id
+                if await asyncio.to_thread(mysql_handler.reset_vouch_for_user, user_to_reset_id):
+                    await message.reply_text("✅ This user's vouch has been reset. They can now vouch again.", parse_mode="HTML")
+                else:
+                    await message.reply_text("⚠️ An error occurred while resetting the vouch.", parse_mode="HTML")
+                await delete_command_message(update, context)
+                return
             if command.startswith(".invoice"):
                 if len(command_parts) < 2 or not command_parts[1].replace('.', '', 1).isdigit():
                     await message.reply_text("<b>Usage:</b> <code>.invoice[_{method}] [amount]</code>\n\n<b>Example:</b> <code>.invoice_btc 10.50</code>", parse_mode="HTML")
