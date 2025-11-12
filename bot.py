@@ -169,16 +169,29 @@ async def process_vouch_in_background(context: ContextTypes.DEFAULT_TYPE):
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.message or update.business_message
-    url = "https://t.me/proxy?server=38.60.221.217&port=443&secret=eec29949a4220d69c470d04576eb1784a5617a75726172652e6d6963726f66742e636f6d"
-    keyboard = [[InlineKeyboardButton("Connect", url)]]
+    welcome_caption = (
+        "<b>Welcome to my Thread</b>\n\n"
+        "Read this <b>carefully</b> before contacting me.\n\n"
+        " • No “hi,” “hello,” or small talk — get <b>straight</b> to the point about what you want.\n\n"
+        "• Always have your <b>crypto ready</b> before messaging me about any deal. No time-wasting or “I’ll buy later.”\n\n"
+        " • Make sure you <b>read my TOS</b> in full before we proceed. By messaging me, you automatically agree to them.\n\n"
+        "• After a smooth transaction, <b>leave a vouch</b> — it helps build trust in the community."
+    )
+    photo_path = "assets/welocome_thread.jpg"
+    keyboard = [[InlineKeyboardButton("ToS", url="https://tos.vouches.my")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    caption = "<b>Connect to our MTProxy - fast, private and secure. 🌐</b>"
-    photo_path = "assets/welcome.jpeg"
 
-    if update.message:
-        await message.reply_photo(photo=photo_path, caption=caption, reply_markup=reply_markup, parse_mode='HTML')
-    elif update.business_message:
-        await context.bot.send_photo(business_connection_id=message.business_connection_id, chat_id=message.chat.id, photo=photo_path, caption=caption, reply_markup=reply_markup, parse_mode="HTML")
+    try:
+        if update.message:
+            await message.reply_photo(photo=photo_path, caption=welcome_caption, reply_markup=reply_markup, parse_mode='HTML')
+        elif update.business_message:
+            await context.bot.send_photo(business_connection_id=message.business_connection_id, chat_id=message.chat.id, photo=photo_path, caption=welcome_caption, reply_markup=reply_markup, parse_mode="HTML")
+    except FileNotFoundError:
+        print(f"ERROR: Welcome image not found at '{photo_path}'. Sending text-only fallback.")
+        if update.message:
+            await message.reply_text(text=welcome_caption, reply_markup=reply_markup, parse_mode='HTML', disable_web_page_preview=True)
+        elif update.business_message:
+            await context.bot.send_message(business_connection_id=message.business_connection_id, chat_id=message.chat.id, text=welcome_caption, reply_markup=reply_markup, parse_mode="HTML", disable_web_page_preview=True)
     
     try:
         if update.message:
@@ -503,7 +516,7 @@ async def master_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         command = command_parts[0].lower()
 
         if user_id in admin_id:
-            if command in [".start", ".proxy"]: await start_command(update, context); return
+            if command == ".start": await start_command(update, context); return
             if command == ".invite": await invite_command(update, context); return
             if command == ".del_vouch": await delete_vouch_command(update, context); return
             if command == ".reset":
