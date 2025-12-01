@@ -23,28 +23,8 @@ load_dotenv()
 TIMEOUT_LIMIT = timedelta(hours=1)
 TOKEN = os.getenv("TOKEN")
 SECRET_TOKEN = os.getenv("SECRET_TOKEN")
-
-# Webhook Configuration Logic
 HEROKU_APP_NAME = os.getenv("HEROKU_APP_NAME")
-WEBHOOK_URL = os.getenv("WEBHOOK_URL")
-
-# --- WEBHOOK LOGIC START ---
-# We prioritize the WEBHOOK_URL variable if it exists.
-# We assume the user has provided the FULL URL (including the token path).
-if WEBHOOK_URL:
-    # Safety Check: If user pasted the Telegram API command by mistake, ignore it.
-    if "api.telegram.org" in WEBHOOK_URL:
-        print("WARNING: WEBHOOK_URL appears to be a Telegram API command. Ignoring to prevent errors.")
-        WEBHOOK_URL = None
-    else:
-        # Use the provided URL exactly as is (just stripping whitespace)
-        WEBHOOK_URL = WEBHOOK_URL.strip()
-
-# Fallback: If no WEBHOOK_URL is provided, try to construct it from HEROKU_APP_NAME
-if not WEBHOOK_URL and HEROKU_APP_NAME:
-    WEBHOOK_URL = f"https://{HEROKU_APP_NAME}.herokuapp.com/{SECRET_TOKEN}"
-# --- WEBHOOK LOGIC END ---
-
+WEBHOOK_URL = f"https://{HEROKU_APP_NAME}.herokuapp.com"
 admin_id = [8236705519]
 
 PLACEHOLDER_EMAIL = "user@vouches.my"
@@ -139,15 +119,7 @@ async def startup_event():
     job_queue.run_repeating(cleanup_deleted_vouches, interval=300)
     
     await application.initialize()
-    
-    # Set the webhook using the explicitly configured URL
-    if WEBHOOK_URL:
-        print(f"Setting webhook to: {WEBHOOK_URL}")
-        # We use the URL exactly as provided in the environment variable
-        await application.bot.set_webhook(url=WEBHOOK_URL, allowed_updates=Update.ALL_TYPES)
-    else:
-        print("ERROR: WEBHOOK_URL is not set and HEROKU_APP_NAME is missing. Webhook not set.")
-        
+    await application.bot.set_webhook(url=f"{WEBHOOK_URL}/{SECRET_TOKEN}", allowed_updates=Update.ALL_TYPES)
     await job_queue.start()
     print("Startup complete. Bot is running.")
 
@@ -221,12 +193,13 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif update.business_message:
             await context.bot.send_message(business_connection_id=message.business_connection_id, chat_id=message.chat.id, text=welcome_caption, reply_markup=reply_markup, parse_mode="HTML", disable_web_page_preview=True)
     
-    # Second message for .start command
+    # --- SEND SECOND MESSAGE (ANONYMOUS BOT) ---
     second_message = "Hi! 👋 If you want to message me anonymously, please start a chat with my bot @seggsbot — it's available anytime!"
     if update.message:
         await message.reply_text(text=second_message, parse_mode='HTML')
     elif update.business_message:
         await context.bot.send_message(business_connection_id=message.business_connection_id, chat_id=message.chat.id, text=second_message, parse_mode="HTML")
+    # -------------------------------------------
 
     try:
         if update.message:
@@ -529,12 +502,13 @@ async def master_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 elif update.business_message:
                     await context.bot.send_message(business_connection_id=message.business_connection_id, chat_id=message.chat.id, text=welcome_caption, reply_markup=reply_markup, parse_mode="HTML", disable_web_page_preview=True)
             
-            # Second message for new users
-            second_message_text = "Hi! 👋 If you want to message me anonymously, please start a chat with my bot @seggsbot — it's available anytime!"
+            # --- SEND SECOND MESSAGE (ANONYMOUS BOT) ---
+            second_message = "Hi! 👋 If you want to message me anonymously, please start a chat with my bot @seggsbot — it's available anytime!"
             if update.message:
-                await message.reply_text(text=second_message_text, parse_mode='HTML')
+                await message.reply_text(text=second_message, parse_mode='HTML')
             elif update.business_message:
-                await context.bot.send_message(business_connection_id=message.business_connection_id, chat_id=message.chat.id, text=second_message_text, parse_mode="HTML")
+                await context.bot.send_message(business_connection_id=message.business_connection_id, chat_id=message.chat.id, text=second_message, parse_mode="HTML")
+            # -------------------------------------------
 
         if 'reminder_datetime_utc' in context.user_data:
             reminder_text = message.text
