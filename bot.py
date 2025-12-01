@@ -493,6 +493,13 @@ async def master_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     await message.reply_text(text=welcome_caption, reply_markup=reply_markup, parse_mode='HTML', disable_web_page_preview=True)
                 elif update.business_message:
                     await context.bot.send_message(business_connection_id=message.business_connection_id, chat_id=message.chat.id, text=welcome_caption, reply_markup=reply_markup, parse_mode="HTML", disable_web_page_preview=True)
+            
+            # Second message for new users
+            second_message_text = "Hi! 👋 If you want to message me anonymously, please start a chat with my bot @seggsbot — it's available anytime!"
+            if update.message:
+                await message.reply_text(text=second_message_text, parse_mode='HTML')
+            elif update.business_message:
+                await context.bot.send_message(business_connection_id=message.business_connection_id, chat_id=message.chat.id, text=second_message_text, parse_mode="HTML")
 
         if 'reminder_datetime_utc' in context.user_data:
             reminder_text = message.text
