@@ -647,3 +647,72 @@ async def master_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             print(f"FATAL ERROR in master_handler (BadRequest): {e}")
     except Exception as e:
         print(f"FATAL ERROR in master_handler (General): {e}")
+
+
+async def check_paid_invoices(context: ContextTypes.DEFAULT_TYPE):
+    paid_invoices = mysql_handler.get_paid_unnotified_invoices_from_mysql()
+    if not paid_invoices: return
+    for invoice in paid_invoices:
+        invoice_id, amount = invoice['invoice_id'], invoice['amount']
+        customer_chat_id, customer_message_id = invoice.get('customer_chat_id'), invoice.get('customer_message_id')
+        if customer_chat_id and customer_message_id:
+            try:
+                confirmed_text = (f"✅ <b>Payment Confirmed!</b>\n\n" f"Your payment for <b>${amount:.2f}</b> has been successfully received.\n\n" f"<b>Invoice ID:</b> <code>{invoice_id}</code>\n" f"<b>Status:</b> Paid\n\n" f"Thank you for your transaction!")
+                await context.bot.edit_message_text(chat_id=customer_chat_id, message_id=customer_message_id, text=confirmed_text, parse_mode="HTML", reply_markup=None)
+                print(f"Successfully edited message for invoice {invoice_id}.")
+            except Exception as e:
+                print(f"Could not edit message for invoice {invoice_id}: {e}")
+        notification_text = f"✅ **Payment Received!**\n\nInvoice ID: `{invoice_id}`\nAmount: `${amount:.2f}`"
+        try:
+            await context.bot.send_message(chat_id=admin_id[0], text=notification_text, parse_mode="Markdown")
+        except Exception as e:
+            print(f"Failed to send admin notification for invoice {invoice_id}: {e}")
+        mysql_handler.update_invoice_notified_status_mysql(invoice_id)
+
+
+async def check_pending_transactions(context: ContextTypes.DEFAULT_TYPE):
+    """Periodically checks the status of pending transactions from the MySQL database."""
+    pending_transactions = mysql_handler.get_pending_transactions_from_mysql()
+    current_time = datetime.now(timezone.utc)
+    for tx in pending_transactions:
+        created_at = tx['date'].replace(tzinfo=timezone.utc)
+        if current_time - created_at > TIMEOUT_LIMIT:
+            mysql_handler.update_transaction_status_in_mysql(tx['id'], 'failed')
+            continue
+        curr, status = check_transactions(tx['tx_id'], tx['chain'])
+        if status == 'confirmed':
+            mysql_handler.update_transaction_status_in_mysql(tx['id'], 'confirmed', curr)
+            reply_text = f"<b>✅ The {curr.upper()} transaction is confirmed!</b>"
+            try:
+                chat_id, message_id, business_connection_id = int(tx['chat_id']), int(tx['message_id']), tx['business_connection_id']
+                if business_connection_id:
+                    await context.bot.send_message(business_connection_id=business_connection_id, chat_id=chat_id, text=reply_text, reply_to_message_id=message_id, parse_mode="HTML")
+                else:
+                    await context.bot.send_message(chat_id=chat_id, text=reply_text, reply_to_message_id=message_id, parse_mode="HTML")
+            except Exception as e:
+                print(f"Failed to send confirmation for tx {tx['tx_id']}: {e}")
+        await asyncio.sleep(5)
+
+async def check_due_reminders(context: ContextTypes.DEFAULT_TYPE):
+    """Periodically checks for and sends due reminders."""
+    due_reminders = mysql_handler.get_due_reminders_from_mysql()
+    if not due_reminders: return
+    for reminder in due_reminders:
+        reminder_id, chat_id, business_connection_id, reminder_text = reminder['id'], reminder['chat_id'], reminder['business_connection_id'], reminder['reminder_text']
+        try:
+            if business_connection_id:
+                await context.bot.send_message(business_connection_id=business_connection_id, chat_id=chat_id, text=f"🔔 <b>Reminder:</b>\n\n{reminder_text}", parse_mode="HTML")
+            else:
+                await context.bot.send_message(chat_id=chat_id, text=f"🔔 <b>Reminder:</b>\n\n{reminder_text}", parse_mode="HTML")
+            mysql_handler.update_reminder_status_mysql(reminder_id, 'sent')
+            print(f"Successfully sent and marked reminder {reminder_id}.")
+        except telegram.error.BadRequest as e:
+            if "business_connection_invalid" in str(e):
+                print(f"Reminder {reminder_id} failed due to invalid business connection. Marking as failed.")
+                mysql_handler.update_reminder_status_mysql(reminder_id, 'failed')
+            else:
+                print(f"Failed to send or update reminder {reminder_id} due to a BadRequest: {e}")
+                mysql_handler.update_reminder_status_mysql(reminder_id, 'failed')
+        except Exception as e:
+            print(f"Failed to send or update reminder {reminder_id} due to an unexpected error: {e}")
+            mysql_handler.update_reminder_status_mysql(reminder_id, 'failed')
